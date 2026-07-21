@@ -22,6 +22,8 @@ namespace WeiFlowLite.Services
         private const string CreateCommentUrl = "https://m.weibo.cn/api/comments/create";
         private const string LikeUrl = "https://m.weibo.cn/api/attitudes/create";
         private const string UnlikeUrl = "https://m.weibo.cn/api/attitudes/destroy";
+        private const string FavoriteUrl = "https://m.weibo.cn/api/favorites/create";
+        private const string UnfavoriteUrl = "https://m.weibo.cn/api/favorites/destroy";
         private const string FollowUserUrl = "https://m.weibo.cn/api/friendships/create";
         private const string UnfollowUserUrl = "https://m.weibo.cn/api/friendships/destroy";
         private const string HotSearchUrl = "https://weibo.com/ajax/statuses/hot_band";
@@ -470,6 +472,26 @@ namespace WeiFlowLite.Services
             {
                 var body = await response.Content.ReadAsStringAsync();
                 EnsureMutationSucceeded(response, body, like ? "点赞失败" : "取消点赞失败");
+            }
+        }
+
+        public async Task SetFavoriteAsync(string id, bool favorite)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                throw new ArgumentException("微博 id 不能为空。", nameof(id));
+            }
+
+            await EnsureVisitorSessionAsync();
+            var st = await GetStTokenAsync();
+            var form =
+                $"id={Uri.EscapeDataString(id)}" +
+                $"&st={Uri.EscapeDataString(st)}" +
+                "&_spr=screen%3A1920x1080";
+            using (var response = await PostTimelineFormAsync(favorite ? FavoriteUrl : UnfavoriteUrl, form))
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                EnsureMutationSucceeded(response, body, favorite ? "收藏失败" : "取消收藏失败");
             }
         }
 

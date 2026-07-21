@@ -1838,6 +1838,8 @@ namespace WeiFlowLite
                 TitleBarDragRegion.Visibility = Visibility.Collapsed;
                 SearchBackButton.Visibility = Visibility.Visible;
                 LoginBackButton.Visibility = Visibility.Visible;
+                DetailBackButton.Visibility = Visibility.Visible;
+                SearchDetailBackButton.Visibility = Visibility.Visible;
                 ApplyMobileDetailTransitions();
                 return;
             }
@@ -1849,6 +1851,8 @@ namespace WeiFlowLite
             LoginHeader.Padding = new Thickness(16, 0, 16, 0);
             SearchBackButton.Visibility = Visibility.Collapsed;
             LoginBackButton.Visibility = Visibility.Collapsed;
+            DetailBackButton.Visibility = Visibility.Collapsed;
+            SearchDetailBackButton.Visibility = Visibility.Collapsed;
             UpdateTitleBarLayout();
         }
 
@@ -2663,6 +2667,30 @@ namespace WeiFlowLite
             }
         }
 
+        private async void DetailFavoriteButton_Click(object sender, RoutedEventArgs e)
+        {
+            var item = (sender as FrameworkElement)?.DataContext as WeiboItemViewModel ?? _detailItem;
+            if (item != null)
+            {
+                var favorited = !item.IsFavorited;
+                try
+                {
+                    await _apiService.SetFavoriteAsync(item.Id, favorited);
+                    item.ApplyFavorited(favorited);
+                    await ShowErrorAsync(favorited ? "收藏成功。" : "已取消收藏。" );
+                }
+                catch (Exception ex)
+                {
+                    await ShowErrorAsync($"{(favorited ? "收藏" : "取消收藏")}失败: {ex.Message}");
+                }
+            }
+        }
+
+        private void DetailBackButton_Click(object sender, RoutedEventArgs e)
+        {
+            NavigateBack();
+        }
+
         private async void DetailUserHeader_Tapped(object sender, TappedRoutedEventArgs e)
         {
             var item = (sender as FrameworkElement)?.DataContext as WeiboItemViewModel ?? _detailItem;
@@ -3405,6 +3433,14 @@ namespace WeiFlowLite
         public string FollowIconGlyph => IsFollowing ? "\uE73E" : "\uE710";
         public bool IsLiked { get; private set; }
         public string LikeIconGlyph => IsLiked ? "\uE8E1" : "\uE8E3";
+        public Brush LikeForeground => IsLiked
+            ? new SolidColorBrush(Color.FromArgb(255, 0, 120, 215))
+            : new SolidColorBrush(Colors.Gray);
+        public bool IsFavorited { get; private set; }
+        public string FavoriteIconGlyph => IsFavorited ? "\uE735" : "\uE734";
+        public Brush FavoriteForeground => IsFavorited
+            ? new SolidColorBrush(Color.FromArgb(255, 0, 120, 215))
+            : new SolidColorBrush(Colors.Gray);
 
         private int _attitudesCount;
         public int AttitudesCount
@@ -3429,6 +3465,7 @@ namespace WeiFlowLite
             CommentsCount = mblog.CommentsCount;
             AttitudesCount = mblog.AttitudesCount;
             IsLiked = mblog.AttitudesStatus == 1;
+            IsFavorited = mblog.Favorited;
             IsFollowing = mblog.User?.Following == true;
 
             var videoUrl = GetVideoUrl(mblog.PageInfo?.MediaInfo);
@@ -3496,6 +3533,20 @@ namespace WeiFlowLite
             AttitudesCount += isLiked ? 1 : -1;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsLiked)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LikeIconGlyph)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LikeForeground)));
+        }
+
+        public void ApplyFavorited(bool isFavorited)
+        {
+            if (IsFavorited == isFavorited)
+            {
+                return;
+            }
+
+            IsFavorited = isFavorited;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsFavorited)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(FavoriteIconGlyph)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(FavoriteForeground)));
         }
 
         public event PropertyChangedEventHandler PropertyChanged;

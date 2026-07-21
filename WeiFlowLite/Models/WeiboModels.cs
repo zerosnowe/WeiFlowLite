@@ -221,6 +221,9 @@ namespace WeiFlowLite.Models
         [JsonProperty("attitudes_status")]
         public int AttitudesStatus { get; set; }
 
+        [JsonProperty("favorited")]
+        public bool Favorited { get; set; }
+
         [JsonProperty("page_info")]
         public WeiboPageInfo PageInfo { get; set; }
     }

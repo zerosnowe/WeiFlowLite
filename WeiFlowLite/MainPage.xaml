@@ -10,29 +10,98 @@
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
 
     <Page.Resources>
-        <local:CollectionToVisibilityConverter x:Key="CollectionToVisibilityConverter"/>
-        <SolidColorBrush x:Key="PivotHeaderItemSelectedForeground" Color="#FF8200"/>
-        <SolidColorBrush x:Key="PivotHeaderItemSelectedPointerOverForeground" Color="#FF8200"/>
-        <SolidColorBrush x:Key="PivotHeaderItemSelectedPressedForeground" Color="#FF8200"/>
-        <Style x:Key="WeiboListViewStyle" TargetType="ListView">
-            <Setter Property="SelectionMode" Value="None"/>
-            <Setter Property="IsItemClickEnabled" Value="True"/>
-            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
-        </Style>
-        <Style x:Key="NavListViewItemStyle" TargetType="ListViewItem">
-            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-            <Setter Property="Padding" Value="0"/>
-        </Style>
-        <Style x:Key="NavIconStyle" TargetType="FontIcon">
-            <Setter Property="FontSize" Value="16"/>
-            <Setter Property="HorizontalAlignment" Value="Center"/>
-            <Setter Property="VerticalAlignment" Value="Center"/>
-        </Style>
-        <Style TargetType="TextBox">
-            <Setter Property="Foreground" Value="{ThemeResource SystemControlForegroundBaseHighBrush}"/>
-            <Setter Property="Background" Value="{ThemeResource ApplicationPageBackgroundThemeBrush}"/>
-            <Setter Property="BorderBrush" Value="{ThemeResource SystemControlForegroundBaseLowBrush}"/>
-        </Style>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+            <ResourceDictionary x:Key="Default">
+                <SolidColorBrush x:Key="WeiboTextBoxBackgroundBrush" Color="#FFFFFFFF"/>
+                <SolidColorBrush x:Key="WeiboTextBoxForegroundBrush" Color="#FF1F1F1F"/>
+                <SolidColorBrush x:Key="WeiboTextBoxBorderBrush" Color="#33000000"/>
+                <SolidColorBrush x:Key="WeiboTextBoxPlaceholderBrush" Color="#99000000"/>
+                <SolidColorBrush x:Key="TextControlBackground" Color="#FFFFFFFF"/>
+                <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#FFFFFFFF"/>
+                <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#FFFFFFFF"/>
+                <SolidColorBrush x:Key="TextControlBackgroundDisabled" Color="#FFFFFFFF"/>
+                <SolidColorBrush x:Key="TextControlForeground" Color="#FF1F1F1F"/>
+                <SolidColorBrush x:Key="TextControlForegroundPointerOver" Color="#FF1F1F1F"/>
+                <SolidColorBrush x:Key="TextControlForegroundFocused" Color="#FF1F1F1F"/>
+                <SolidColorBrush x:Key="TextControlForegroundDisabled" Color="#FF1F1F1F"/>
+                <SolidColorBrush x:Key="TextControlBorderBrush" Color="#33000000"/>
+                <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#33000000"/>
+                <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="#33000000"/>
+                <SolidColorBrush x:Key="TextControlBorderBrushDisabled" Color="#33000000"/>
+                <SolidColorBrush x:Key="TextControlPlaceholderForeground" Color="#99000000"/>
+                <SolidColorBrush x:Key="TextControlPlaceholderForegroundPointerOver" Color="#99000000"/>
+                <SolidColorBrush x:Key="TextControlPlaceholderForegroundFocused" Color="#99000000"/>
+            </ResourceDictionary>
+            <ResourceDictionary x:Key="Light">
+                <SolidColorBrush x:Key="WeiboTextBoxBackgroundBrush" Color="#FFFFFFFF"/>
+                <SolidColorBrush x:Key="WeiboTextBoxForegroundBrush" Color="#FF1F1F1F"/>
+                <SolidColorBrush x:Key="WeiboTextBoxBorderBrush" Color="#33000000"/>
+                <SolidColorBrush x:Key="WeiboTextBoxPlaceholderBrush" Color="#99000000"/>
+                <SolidColorBrush x:Key="TextControlBackground" Color="#FFFFFFFF"/>
+                <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#FFFFFFFF"/>
+                <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#FFFFFFFF"/>
+                <SolidColorBrush x:Key="TextControlBackgroundDisabled" Color="#FFFFFFFF"/>
+                <SolidColorBrush x:Key="TextControlForeground" Color="#FF1F1F1F"/>
+                <SolidColorBrush x:Key="TextControlForegroundPointerOver" Color="#FF1F1F1F"/>
+                <SolidColorBrush x:Key="TextControlForegroundFocused" Color="#FF1F1F1F"/>
+                <SolidColorBrush x:Key="TextControlForegroundDisabled" Color="#FF1F1F1F"/>
+                <SolidColorBrush x:Key="TextControlBorderBrush" Color="#33000000"/>
+                <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#33000000"/>
+                <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="#33000000"/>
+                <SolidColorBrush x:Key="TextControlBorderBrushDisabled" Color="#33000000"/>
+                <SolidColorBrush x:Key="TextControlPlaceholderForeground" Color="#99000000"/>
+                <SolidColorBrush x:Key="TextControlPlaceholderForegroundPointerOver" Color="#99000000"/>
+                <SolidColorBrush x:Key="TextControlPlaceholderForegroundFocused" Color="#99000000"/>
+            </ResourceDictionary>
+            <ResourceDictionary x:Key="Dark">
+                <SolidColorBrush x:Key="WeiboTextBoxBackgroundBrush" Color="#FF1F1F1F"/>
+                <SolidColorBrush x:Key="WeiboTextBoxForegroundBrush" Color="#FFF2F2F2"/>
+                <SolidColorBrush x:Key="WeiboTextBoxBorderBrush" Color="#40FFFFFF"/>
+                <SolidColorBrush x:Key="WeiboTextBoxPlaceholderBrush" Color="#99FFFFFF"/>
+                <SolidColorBrush x:Key="TextControlBackground" Color="#FF1F1F1F"/>
+                <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#FF1F1F1F"/>
+                <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#FF1F1F1F"/>
+                <SolidColorBrush x:Key="TextControlBackgroundDisabled" Color="#FF1F1F1F"/>
+                <SolidColorBrush x:Key="TextControlForeground" Color="#FFF2F2F2"/>
+                <SolidColorBrush x:Key="TextControlForegroundPointerOver" Color="#FFF2F2F2"/>
+                <SolidColorBrush x:Key="TextControlForegroundFocused" Color="#FFF2F2F2"/>
+                <SolidColorBrush x:Key="TextControlForegroundDisabled" Color="#FFF2F2F2"/>
+                <SolidColorBrush x:Key="TextControlBorderBrush" Color="#40FFFFFF"/>
+                <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#40FFFFFF"/>
+                <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="#40FFFFFF"/>
+                <SolidColorBrush x:Key="TextControlBorderBrushDisabled" Color="#40FFFFFF"/>
+                <SolidColorBrush x:Key="TextControlPlaceholderForeground" Color="#99FFFFFF"/>
+                <SolidColorBrush x:Key="TextControlPlaceholderForegroundPointerOver" Color="#99FFFFFF"/>
+                <SolidColorBrush x:Key="TextControlPlaceholderForegroundFocused" Color="#99FFFFFF"/>
+            </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+            <FontFamily x:Key="SymbolThemeFontFamily">Segoe Fluent Icons,Segoe MDL2 Assets,Segoe UI Symbol</FontFamily>
+            <local:CollectionToVisibilityConverter x:Key="CollectionToVisibilityConverter"/>
+            <local:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+            <SolidColorBrush x:Key="PivotHeaderItemSelectedForeground" Color="#FF8200"/>
+            <SolidColorBrush x:Key="PivotHeaderItemSelectedPointerOverForeground" Color="#FF8200"/>
+            <SolidColorBrush x:Key="PivotHeaderItemSelectedPressedForeground" Color="#FF8200"/>
+            <Style x:Key="WeiboListViewStyle" TargetType="ListView">
+                <Setter Property="SelectionMode" Value="None"/>
+                <Setter Property="IsItemClickEnabled" Value="True"/>
+                <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
+            </Style>
+            <Style x:Key="NavListViewItemStyle" TargetType="ListViewItem">
+                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                <Setter Property="Padding" Value="0"/>
+            </Style>
+            <Style x:Key="NavIconStyle" TargetType="FontIcon">
+                <Setter Property="FontSize" Value="16"/>
+                <Setter Property="HorizontalAlignment" Value="Center"/>
+                <Setter Property="VerticalAlignment" Value="Center"/>
+            </Style>
+            <Style TargetType="TextBox">
+                <Setter Property="Foreground" Value="{ThemeResource WeiboTextBoxForegroundBrush}"/>
+                <Setter Property="Background" Value="{ThemeResource WeiboTextBoxBackgroundBrush}"/>
+                <Setter Property="BorderBrush" Value="{ThemeResource WeiboTextBoxBorderBrush}"/>
+            </Style>
+        </ResourceDictionary>
     </Page.Resources>
 
     <Grid>
@@ -315,28 +384,12 @@
                                 </TransitionCollection>
                             </Border.Transitions>
                             <Grid>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="48"/>
-                                    <RowDefinition Height="*"/>
-                                </Grid.RowDefinitions>
-                                <Button x:Name="DetailBackButton"
-                                        Grid.Row="0"
-                                        Width="48"
-                                        Height="48"
-                                        HorizontalAlignment="Left"
-                                        Background="Transparent"
-                                        Visibility="Collapsed"
-                                        Click="DetailBackButton_Click">
-                                    <FontIcon Glyph="&#xE72B;"/>
-                                </Button>
                                 <TextBlock x:Name="DetailPlaceholder"
-                                           Grid.Row="1"
                                            Text="选择一条微博查看正文"
                                            HorizontalAlignment="Center"
                                            VerticalAlignment="Center"
                                            Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"/>
                                 <ProgressBar x:Name="DetailLoadingIndicator"
-                                              Grid.Row="1"
                                               Width="56"
                                               Height="6"
                                               HorizontalAlignment="Center"
@@ -344,12 +397,21 @@
                                               IsIndeterminate="True"
                                               Visibility="Collapsed"/>
                                 <ScrollViewer x:Name="DetailScrollViewer"
-                                              Grid.Row="1"
                                               Visibility="Collapsed"
                                               HorizontalScrollBarVisibility="Disabled"
                                               HorizontalScrollMode="Disabled"
                                               Padding="24,16,24,56">
                                     <StackPanel x:Name="DetailContent">
+                                        <Button x:Name="DetailBackButton"
+                                                Width="48"
+                                                Height="48"
+                                                Padding="0"
+                                                Margin="-12,0,0,0"
+                                                Background="Transparent"
+                                                Visibility="Collapsed"
+                                                Click="DetailBackButton_Click">
+                                            <FontIcon Glyph="&#xE72B;"/>
+                                        </Button>
                                         <Grid Margin="0,0,0,4"
                                               Tapped="DetailUserHeader_Tapped">
                                             <Grid.ColumnDefinitions>
@@ -442,25 +504,16 @@
                                             </ListView.ItemTemplate>
                                         </ListView>
 
-                                        <Grid Height="28">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0" Orientation="Horizontal" HorizontalAlignment="Left">
-                                                <FontIcon Glyph="&#xE72D;" FontFamily="Segoe MDL2 Assets" FontSize="14" Margin="0,0,5,0"/>
-                                                <TextBlock Text="{Binding RepostsCount}" FontSize="13" VerticalAlignment="Center"/>
-                                            </StackPanel>
-                                            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center">
-                                                <FontIcon Glyph="&#xE90A;" FontFamily="Segoe MDL2 Assets" FontSize="14" Margin="0,0,5,0"/>
-                                                <TextBlock Text="{Binding CommentsCount}" FontSize="13" VerticalAlignment="Center"/>
-                                            </StackPanel>
-                                            <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right">
-                                                <FontIcon Glyph="{Binding LikeIconGlyph}" FontFamily="Segoe MDL2 Assets" FontSize="14" Margin="0,0,5,0" Foreground="{Binding LikeForeground}"/>
-                                                <TextBlock Text="{Binding AttitudesCount}" FontSize="13" VerticalAlignment="Center"/>
-                                            </StackPanel>
-                                        </Grid>
+                                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                            <FontIcon x:Name="DetailRepostFluentIcon" Glyph="&#xE8CB;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,5,0"/>
+                                            <FontIcon x:Name="DetailRepostMdl2Icon" Glyph="&#xE72D;" FontFamily="Segoe MDL2 Assets" FontSize="14" Margin="0,0,5,0" Visibility="Collapsed"/>
+                                            <TextBlock Text="{Binding RepostsCount}" FontSize="13" VerticalAlignment="Center" Margin="0,0,18,0"/>
+                                            <FontIcon x:Name="DetailCommentStatFluentIcon" Glyph="&#xE8BD;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,5,0"/>
+                                            <FontIcon x:Name="DetailCommentStatMdl2Icon" Glyph="&#xE90A;" FontFamily="Segoe MDL2 Assets" FontSize="14" Margin="0,0,5,0" Visibility="Collapsed"/>
+                                            <TextBlock Text="{Binding CommentsCount}" FontSize="13" VerticalAlignment="Center" Margin="0,0,18,0"/>
+                                            <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xEB51;" FontSize="14" Margin="0,0,5,0"/>
+                                            <TextBlock Text="{Binding AttitudesCount}" FontSize="13" VerticalAlignment="Center"/>
+                                        </StackPanel>
 
                                         <TextBlock Text="评论"
                                                    FontSize="18"
@@ -539,30 +592,39 @@
                                                 Margin="4,0,0,0"
                                                 Background="Transparent"
                                                 Click="DetailCommentButton_Click">
-                                            <FontIcon Glyph="&#xE90A;" FontFamily="Segoe MDL2 Assets" FontSize="18"/>
+                                            <Grid>
+                                                <FontIcon x:Name="DetailCommentFluentIcon" Glyph="&#xE8BD;" FontFamily="Segoe Fluent Icons" FontSize="18"/>
+                                                <FontIcon x:Name="DetailCommentMdl2Icon" Glyph="&#xE90A;" FontFamily="Segoe MDL2 Assets" FontSize="18" Visibility="Collapsed"/>
+                                            </Grid>
                                         </Button>
                                         <Button Width="72"
                                                 Margin="4,0,0,0"
                                                 Background="Transparent"
                                                 Click="DetailLikeButton_Click">
-                                            <FontIcon Glyph="{Binding LikeIconGlyph}"
-                                                      Foreground="{Binding LikeForeground}"/>
+                                            <Grid>
+                                                <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xEB51;" FontSize="20"/>
+                                            </Grid>
                                         </Button>
                                         <Button Width="72"
                                                 Margin="4,0,0,0"
                                                 Background="Transparent"
                                                 Click="DetailFavoriteButton_Click">
-                                            <FontIcon Glyph="{Binding FavoriteIconGlyph}"
-                                                      Foreground="{Binding FavoriteForeground}"/>
+                                            <Grid>
+                                                <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xE734;" FontSize="20"/>
+                                            </Grid>
                                         </Button>
                                         <Button Width="72"
                                                 Background="Transparent"
                                                 Click="DetailScrollTopButton_Click">
-                                            <FontIcon Glyph="&#xE74A;" FontFamily="Segoe MDL2 Assets" FontSize="18"/>
+                                            <Grid>
+                                                <FontIcon x:Name="DetailTopFluentIcon" Glyph="&#xE74A;" FontFamily="Segoe Fluent Icons" FontSize="18"/>
+                                                <FontIcon x:Name="DetailTopMdl2Icon" Glyph="&#xE74A;" FontFamily="Segoe MDL2 Assets" FontSize="18" Visibility="Collapsed"/>
+                                            </Grid>
                                         </Button>
                                     </StackPanel>
                                 </Border>
                                 <Grid x:Name="UserProfilePanel"
+                                      Grid.RowSpan="2"
                                       Visibility="Collapsed"
                                       Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
                                       Canvas.ZIndex="6">
@@ -860,28 +922,12 @@
                                 </TransitionCollection>
                             </Border.Transitions>
                             <Grid>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="48"/>
-                                    <RowDefinition Height="*"/>
-                                </Grid.RowDefinitions>
-                                <Button x:Name="SearchDetailBackButton"
-                                        Grid.Row="0"
-                                        Width="48"
-                                        Height="48"
-                                        HorizontalAlignment="Left"
-                                        Background="Transparent"
-                                        Visibility="Collapsed"
-                                        Click="DetailBackButton_Click">
-                                    <FontIcon Glyph="&#xE72B;"/>
-                                </Button>
                                 <TextBlock x:Name="SearchDetailPlaceholder"
-                                           Grid.Row="1"
                                            Text="选择一条微博查看正文"
                                            HorizontalAlignment="Center"
                                            VerticalAlignment="Center"
                                            Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"/>
                                 <ProgressBar x:Name="SearchDetailLoadingIndicator"
-                                              Grid.Row="1"
                                               Width="56"
                                               Height="6"
                                               HorizontalAlignment="Center"
@@ -889,12 +935,21 @@
                                               IsIndeterminate="True"
                                               Visibility="Collapsed"/>
                                 <ScrollViewer x:Name="SearchDetailScrollViewer"
-                                              Grid.Row="1"
                                               Visibility="Collapsed"
                                               HorizontalScrollBarVisibility="Disabled"
                                               HorizontalScrollMode="Disabled"
                                               Padding="24,16,24,56">
                                     <StackPanel x:Name="SearchDetailContent">
+                                        <Button x:Name="SearchDetailBackButton"
+                                                Width="48"
+                                                Height="48"
+                                                Padding="0"
+                                                Margin="-12,0,0,0"
+                                                Background="Transparent"
+                                                Visibility="Collapsed"
+                                                Click="DetailBackButton_Click">
+                                            <FontIcon Glyph="&#xE72B;"/>
+                                        </Button>
                                         <Grid Margin="0,0,0,4">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto"/>
@@ -987,25 +1042,16 @@
                                             </ListView.ItemTemplate>
                                         </ListView>
 
-                                        <Grid Height="28">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0" Orientation="Horizontal" HorizontalAlignment="Left">
-                                                <FontIcon Glyph="&#xE72D;" FontFamily="Segoe MDL2 Assets" FontSize="14" Margin="0,0,5,0"/>
-                                                <TextBlock Text="{Binding RepostsCount}" FontSize="13" VerticalAlignment="Center"/>
-                                            </StackPanel>
-                                            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center">
-                                                <FontIcon Glyph="&#xE90A;" FontFamily="Segoe MDL2 Assets" FontSize="14" Margin="0,0,5,0"/>
-                                                <TextBlock Text="{Binding CommentsCount}" FontSize="13" VerticalAlignment="Center"/>
-                                            </StackPanel>
-                                            <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right">
-                                                <FontIcon Glyph="{Binding LikeIconGlyph}" FontFamily="Segoe MDL2 Assets" FontSize="14" Margin="0,0,5,0" Foreground="{Binding LikeForeground}"/>
-                                                <TextBlock Text="{Binding AttitudesCount}" FontSize="13" VerticalAlignment="Center"/>
-                                            </StackPanel>
-                                        </Grid>
+                                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                            <FontIcon x:Name="SearchDetailRepostFluentIcon" Glyph="&#xE8CB;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,5,0"/>
+                                            <FontIcon x:Name="SearchDetailRepostMdl2Icon" Glyph="&#xE72D;" FontFamily="Segoe MDL2 Assets" FontSize="14" Margin="0,0,5,0" Visibility="Collapsed"/>
+                                            <TextBlock Text="{Binding RepostsCount}" FontSize="13" VerticalAlignment="Center" Margin="0,0,18,0"/>
+                                            <FontIcon x:Name="SearchDetailCommentStatFluentIcon" Glyph="&#xE8BD;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,5,0"/>
+                                            <FontIcon x:Name="SearchDetailCommentStatMdl2Icon" Glyph="&#xE90A;" FontFamily="Segoe MDL2 Assets" FontSize="14" Margin="0,0,5,0" Visibility="Collapsed"/>
+                                            <TextBlock Text="{Binding CommentsCount}" FontSize="13" VerticalAlignment="Center" Margin="0,0,18,0"/>
+                                            <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xEB51;" FontSize="14" Margin="0,0,5,0"/>
+                                            <TextBlock Text="{Binding AttitudesCount}" FontSize="13" VerticalAlignment="Center"/>
+                                        </StackPanel>
 
                                         <TextBlock Text="评论"
                                                    FontSize="18"
@@ -1084,26 +1130,34 @@
                                                 Margin="4,0,0,0"
                                                 Background="Transparent"
                                                 Click="DetailCommentButton_Click">
-                                            <FontIcon Glyph="&#xE90A;" FontFamily="Segoe MDL2 Assets" FontSize="18"/>
+                                            <Grid>
+                                                <FontIcon x:Name="SearchDetailCommentFluentIcon" Glyph="&#xE8BD;" FontFamily="Segoe Fluent Icons" FontSize="18"/>
+                                                <FontIcon x:Name="SearchDetailCommentMdl2Icon" Glyph="&#xE90A;" FontFamily="Segoe MDL2 Assets" FontSize="18" Visibility="Collapsed"/>
+                                            </Grid>
                                         </Button>
                                         <Button Width="72"
                                                 Margin="4,0,0,0"
                                                 Background="Transparent"
                                                 Click="DetailLikeButton_Click">
-                                            <FontIcon Glyph="{Binding LikeIconGlyph}"
-                                                      Foreground="{Binding LikeForeground}"/>
+                                            <Grid>
+                                                <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xEB51;" FontSize="20"/>
+                                            </Grid>
                                         </Button>
                                         <Button Width="72"
                                                 Margin="4,0,0,0"
                                                 Background="Transparent"
                                                 Click="DetailFavoriteButton_Click">
-                                            <FontIcon Glyph="{Binding FavoriteIconGlyph}"
-                                                      Foreground="{Binding FavoriteForeground}"/>
+                                            <Grid>
+                                                <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xE734;" FontSize="20"/>
+                                            </Grid>
                                         </Button>
                                         <Button Width="72"
                                                 Background="Transparent"
                                                 Click="DetailScrollTopButton_Click">
-                                            <FontIcon Glyph="&#xE74A;" FontFamily="Segoe MDL2 Assets" FontSize="18"/>
+                                            <Grid>
+                                                <FontIcon x:Name="SearchDetailTopFluentIcon" Glyph="&#xE74A;" FontFamily="Segoe Fluent Icons" FontSize="18"/>
+                                                <FontIcon x:Name="SearchDetailTopMdl2Icon" Glyph="&#xE74A;" FontFamily="Segoe MDL2 Assets" FontSize="18" Visibility="Collapsed"/>
+                                            </Grid>
                                         </Button>
                                     </StackPanel>
                                 </Border>

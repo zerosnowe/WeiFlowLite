@@ -8,6 +8,10 @@ using Windows.ApplicationModel.Core;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Devices.Geolocation;
 using Windows.Foundation;
+using Windows.Storage;
+using Windows.Storage.Pickers;
+using Windows.Storage.Provider;
+using Windows.Storage.Streams;
 using Windows.System.Profile;
 using Windows.System;
 using Windows.UI;
@@ -44,6 +48,66 @@ namespace WeiFlowLite
         private const string PopupScaleYPath = "(UIElement.RenderTransform).(CompositeTransform.ScaleY)";
         private const string PopupTranslateYPath = "(UIElement.RenderTransform).(CompositeTransform.TranslateY)";
         private const string SlideTranslateXPath = "(UIElement.RenderTransform).(CompositeTransform.TranslateX)";
+        private const string MessageWebViewDarkModeScript = @"
+(function () {
+    var styleId = 'weiflow-message-dark-style';
+    var metaId = 'weiflow-message-color-scheme';
+    var css =
+        'html,body,#app,.m-container,.m-container-max,.m-main,.m-page,.m-panel,.card,.card-list,.m-card,.m-cell,.m-tab,.m-top-nav,.nav-main,.msg-main,.chat-main,.chat-list,.msg-list{background:#101010!important;color:#f2f2f2!important;}' +
+        'body{color-scheme:dark!important;}' +
+        'a,div,span,p,h1,h2,h3,h4,h5,h6,li,section,article,header,footer,main,label{color:#f2f2f2!important;}' +
+        '.time,.sub,.sub-text,.txt-sub,.m-text-cut,.m-font-sub,.remark,.desc,.from,.date{color:#a8a8a8!important;}' +
+        'input,textarea,select{background:#1b1b1b!important;color:#f2f2f2!important;border-color:#333!important;caret-color:#f2f2f2!important;}' +
+        'button,.m-btn,.lite-page-tab,.m-bar-panel{background:#1b1b1b!important;color:#f2f2f2!important;border-color:#333!important;}' +
+        '.bubble,.msg-bubble,[class*=bubble],[class*=Bubble]{background:#232323!important;color:#f2f2f2!important;}' +
+        'img,video,svg,canvas{background:transparent!important;}';
+
+    function ensureDarkStyle() {
+        var head = document.head || document.getElementsByTagName('head')[0] || document.documentElement;
+        var style = document.getElementById(styleId);
+        if (!style) {
+            style = document.createElement('style');
+            style.id = styleId;
+            head.appendChild(style);
+        }
+        style.type = 'text/css';
+        style.textContent = css;
+
+        var meta = document.getElementById(metaId);
+        if (!meta) {
+            meta = document.createElement('meta');
+            meta.id = metaId;
+            meta.name = 'color-scheme';
+            head.appendChild(meta);
+        }
+        meta.content = 'dark';
+        document.documentElement.style.backgroundColor = '#101010';
+        document.body && (document.body.style.backgroundColor = '#101010');
+    }
+
+    ensureDarkStyle();
+    if (window.__weiflowMessageDarkTimer) {
+        clearInterval(window.__weiflowMessageDarkTimer);
+    }
+    window.__weiflowMessageDarkTimer = setInterval(ensureDarkStyle, 1200);
+})();";
+        private const string MessageWebViewClearDarkModeScript = @"
+(function () {
+    var style = document.getElementById('weiflow-message-dark-style');
+    if (style && style.parentNode) {
+        style.parentNode.removeChild(style);
+    }
+    var meta = document.getElementById('weiflow-message-color-scheme');
+    if (meta && meta.parentNode) {
+        meta.parentNode.removeChild(meta);
+    }
+    if (window.__weiflowMessageDarkTimer) {
+        clearInterval(window.__weiflowMessageDarkTimer);
+        window.__weiflowMessageDarkTimer = null;
+    }
+    document.documentElement.style.backgroundColor = '';
+    document.body && (document.body.style.backgroundColor = '');
+})();";
 
         private static readonly string[] ExpectedChannelNames =
         {
@@ -104,6 +168,7 @@ namespace WeiFlowLite
         private string _activePreviewMediaUrl;
         private string _activePreviewLaunchUrl;
         private string _activePreviewShareUrl;
+        private StorageFile _activePreviewImageFile;
         private bool _activePreviewIsVideo;
         private string _currentView = "home";
         private string _detailParentView = "home";
@@ -376,11 +441,18 @@ namespace WeiFlowLite
                 DetailScrollViewer.Visibility = Visibility.Collapsed;
                 DetailBottomBar.Visibility = Visibility.Collapsed;
                 DetailPlaceholder.Visibility = Visibility.Collapsed;
+
+                // Keep profile navigation consistent with the mobile detail/search slide.
+                // Set the start position before the panel can be rendered, then animate it in.
+                var profileTransform = EnsurePanelTransform(UserProfilePanel);
+                profileTransform.TranslateX = GetPageStackWidth();
+                AnimatePanelTranslateX(UserProfilePanel, 0);
             }
             else
             {
                 UserProfilePanel.Visibility = Visibility.Collapsed;
                 UserProfileLoadingIndicator.Visibility = Visibility.Collapsed;
+                EnsurePanelTransform(UserProfilePanel).TranslateX = 0;
             }
 
             if (IsMobile)
@@ -417,6 +489,11 @@ namespace WeiFlowLite
                     {
                         _ = ShowErrorAsync($"设置页加载失败: {ex.Message}");
                     }
+                }
+
+                if (SettingsFrame.Content is SettingsPage settingsPage)
+                {
+                    settingsPage.RefreshLiveTileSelection();
                 }
             }
             else if (showDetail)
@@ -899,6 +976,7 @@ namespace WeiFlowLite
             if (_messageWebView == null)
             {
                 _messageWebView = new WebView();
+                _messageWebView.NavigationCompleted += MessageWebView_NavigationCompleted;
                 MessageWebViewHost.Children.Add(_messageWebView);
             }
 
@@ -911,6 +989,33 @@ namespace WeiFlowLite
             if (source != null)
             {
                 _messageWebView.Navigate(source);
+            }
+        }
+
+        private async void MessageWebView_NavigationCompleted(WebView sender, WebViewNavigationCompletedEventArgs args)
+        {
+            await ApplyMessageWebViewThemeAsync(sender);
+        }
+
+        private async Task ApplyMessageWebViewThemeAsync(WebView webView = null)
+        {
+            webView = webView ?? _messageWebView;
+            if (webView == null)
+            {
+                return;
+            }
+
+            var script = ThemeHelper.IsDarkTheme()
+                ? MessageWebViewDarkModeScript
+                : MessageWebViewClearDarkModeScript;
+
+            try
+            {
+                await webView.InvokeScriptAsync("eval", new[] { script });
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"私信网页主题注入失败: {ex.Message}");
             }
         }
 
@@ -1568,6 +1673,7 @@ namespace WeiFlowLite
 
         private void ApplyHomeListLayout()
         {
+            ApplyDetailScrollLayout();
             if (IsMobile || IsNarrowOrPortrait())
             {
                 ApplyHomeStackSlideLayout(false);
@@ -1581,6 +1687,7 @@ namespace WeiFlowLite
 
         private void ApplyHomeDetailSlideLayout(bool showDetail)
         {
+            ApplyDetailScrollLayout();
             if (IsMobile || IsNarrowOrPortrait())
             {
                 ApplyHomeStackSlideLayout(showDetail);
@@ -1723,6 +1830,7 @@ namespace WeiFlowLite
 
         private void ApplySearchDetailSlideLayout(bool showDetail)
         {
+            ApplyDetailScrollLayout();
             if (IsMobile || IsNarrowOrPortrait())
             {
                 ApplySearchStackSlideLayout(showDetail);
@@ -1732,6 +1840,16 @@ namespace WeiFlowLite
             ResetSearchStackSlideLayout();
             SearchListColumn.Width = new GridLength(0);
             SearchDetailColumn.Width = new GridLength(1, GridUnitType.Star);
+        }
+
+        private void ApplyDetailScrollLayout()
+        {
+            DetailScrollViewer.HorizontalAlignment = HorizontalAlignment.Stretch;
+            DetailScrollViewer.MaxWidth = double.PositiveInfinity;
+            DetailContent.MaxWidth = double.PositiveInfinity;
+            SearchDetailScrollViewer.HorizontalAlignment = HorizontalAlignment.Stretch;
+            SearchDetailScrollViewer.MaxWidth = double.PositiveInfinity;
+            SearchDetailContent.MaxWidth = double.PositiveInfinity;
         }
 
         private void ApplySearchStackSlideLayout(bool showDetail)
@@ -1815,6 +1933,7 @@ namespace WeiFlowLite
                 ApplyTitleBarButtonTheme();
             }
             ApplySidebarBackdrop();
+            _ = ApplyMessageWebViewThemeAsync();
         }
 
         private void CoreTitleBar_LayoutMetricsChanged(CoreApplicationViewTitleBar sender, object args)
@@ -1826,6 +1945,7 @@ namespace WeiFlowLite
         {
             ApplySplitViewMode();
             ApplyDetailPadding();
+            ApplyDetailIconSet(IsMobile);
             if (IsMobile)
             {
                 var bounds = Window.Current.Bounds;
@@ -1841,6 +1961,13 @@ namespace WeiFlowLite
                 DetailBackButton.Visibility = Visibility.Visible;
                 SearchDetailBackButton.Visibility = Visibility.Visible;
                 ApplyMobileDetailTransitions();
+
+                DetailScrollViewer.HorizontalAlignment = HorizontalAlignment.Stretch;
+                DetailScrollViewer.MaxWidth = double.PositiveInfinity;
+                DetailContent.MaxWidth = double.PositiveInfinity;
+                SearchDetailScrollViewer.HorizontalAlignment = HorizontalAlignment.Stretch;
+                SearchDetailScrollViewer.MaxWidth = double.PositiveInfinity;
+                SearchDetailContent.MaxWidth = double.PositiveInfinity;
                 return;
             }
 
@@ -1853,7 +1980,38 @@ namespace WeiFlowLite
             LoginBackButton.Visibility = Visibility.Collapsed;
             DetailBackButton.Visibility = Visibility.Collapsed;
             SearchDetailBackButton.Visibility = Visibility.Collapsed;
+
+            DetailScrollViewer.HorizontalAlignment = HorizontalAlignment.Stretch;
+            DetailScrollViewer.MaxWidth = double.PositiveInfinity;
+            DetailContent.MaxWidth = double.PositiveInfinity;
+            SearchDetailScrollViewer.HorizontalAlignment = HorizontalAlignment.Stretch;
+            SearchDetailScrollViewer.MaxWidth = double.PositiveInfinity;
+            SearchDetailContent.MaxWidth = double.PositiveInfinity;
             UpdateTitleBarLayout();
+        }
+
+        private void ApplyDetailIconSet(bool mobile)
+        {
+            var fluent = mobile ? Visibility.Collapsed : Visibility.Visible;
+            var mdl2 = mobile ? Visibility.Visible : Visibility.Collapsed;
+
+            DetailRepostFluentIcon.Visibility = fluent;
+            DetailRepostMdl2Icon.Visibility = mdl2;
+            DetailCommentStatFluentIcon.Visibility = fluent;
+            DetailCommentStatMdl2Icon.Visibility = mdl2;
+            DetailCommentFluentIcon.Visibility = fluent;
+            DetailCommentMdl2Icon.Visibility = mdl2;
+            DetailTopFluentIcon.Visibility = fluent;
+            DetailTopMdl2Icon.Visibility = mdl2;
+
+            SearchDetailRepostFluentIcon.Visibility = fluent;
+            SearchDetailRepostMdl2Icon.Visibility = mdl2;
+            SearchDetailCommentStatFluentIcon.Visibility = fluent;
+            SearchDetailCommentStatMdl2Icon.Visibility = mdl2;
+            SearchDetailCommentFluentIcon.Visibility = fluent;
+            SearchDetailCommentMdl2Icon.Visibility = mdl2;
+            SearchDetailTopFluentIcon.Visibility = fluent;
+            SearchDetailTopMdl2Icon.Visibility = mdl2;
         }
 
         private void ApplyDetailPadding()
@@ -1932,6 +2090,7 @@ namespace WeiFlowLite
         internal void UpdateSidebarOnThemeChange()
         {
             ApplySidebarBackdrop();
+            _ = ApplyMessageWebViewThemeAsync();
         }
 
         private void ApplySplitViewMode()
@@ -2024,6 +2183,10 @@ namespace WeiFlowLite
             if (_loginWebView != null)
             {
                 _loginWebView.NavigationCompleted -= LoginWebView_NavigationCompleted;
+            }
+            if (_messageWebView != null)
+            {
+                _messageWebView.NavigationCompleted -= MessageWebView_NavigationCompleted;
             }
             DataTransferManager.GetForCurrentView().DataRequested -= OnShareDataRequested;
             if (!IsMobile && _coreTitleBar != null)
@@ -2247,6 +2410,8 @@ namespace WeiFlowLite
             {
             }
         }
+
+        internal bool IsAuthenticatedForSettings => _isAuthenticated && _apiService.HasAuthenticatedSession;
 
         private void SetLoadingState(bool isInitialLoad, bool isLoading)
         {
@@ -2581,6 +2746,7 @@ namespace WeiFlowLite
             DetailBottomBar.Visibility = Visibility.Collapsed;
             SearchDetailBottomBar.Visibility = Visibility.Collapsed;
             UserProfilePanel.Visibility = Visibility.Collapsed;
+            EnsurePanelTransform(UserProfilePanel).TranslateX = 0;
             UserProfileScrollViewer.Visibility = Visibility.Collapsed;
             UserProfileLoadingIndicator.Visibility = Visibility.Collapsed;
             _userProfile?.ReleaseImages();
@@ -2670,19 +2836,22 @@ namespace WeiFlowLite
         private async void DetailFavoriteButton_Click(object sender, RoutedEventArgs e)
         {
             var item = (sender as FrameworkElement)?.DataContext as WeiboItemViewModel ?? _detailItem;
-            if (item != null)
+            if (item == null || string.IsNullOrWhiteSpace(item.Id))
             {
-                var favorited = !item.IsFavorited;
-                try
-                {
-                    await _apiService.SetFavoriteAsync(item.Id, favorited);
-                    item.ApplyFavorited(favorited);
-                    await ShowErrorAsync(favorited ? "收藏成功。" : "已取消收藏。" );
-                }
-                catch (Exception ex)
-                {
-                    await ShowErrorAsync($"{(favorited ? "收藏" : "取消收藏")}失败: {ex.Message}");
-                }
+                await ShowErrorAsync("无法获取微博信息。");
+                return;
+            }
+
+            var favorited = !item.IsFavorited;
+            try
+            {
+                await _apiService.SetFavoriteAsync(item.Id, favorited);
+                item.ApplyFavorited(favorited);
+                await ShowErrorAsync(favorited ? "收藏成功。" : "已取消收藏。");
+            }
+            catch (Exception ex)
+            {
+                await ShowErrorAsync($"{(favorited ? "收藏" : "取消收藏")}失败: {ex.Message}");
             }
         }
 
@@ -2722,6 +2891,13 @@ namespace WeiFlowLite
             {
                 _detailParentView = _currentView;
                 NavigateTo("profile", true);
+            }
+            else
+            {
+                // Desktop keeps the profile as an overlay on the detail surface, so it
+                // needs the same horizontal entrance when it is opened directly.
+                EnsurePanelTransform(UserProfilePanel).TranslateX = GetPageStackWidth();
+                AnimatePanelTranslateX(UserProfilePanel, 0);
             }
 
             try
@@ -2789,6 +2965,7 @@ namespace WeiFlowLite
             }
 
             UserProfilePanel.Visibility = Visibility.Collapsed;
+            EnsurePanelTransform(UserProfilePanel).TranslateX = 0;
             if (_detailItem != null)
             {
                 DetailScrollViewer.Visibility = Visibility.Visible;
@@ -3311,6 +3488,7 @@ namespace WeiFlowLite
             _activePreviewMediaUrl = null;
             _activePreviewLaunchUrl = null;
             _activePreviewShareUrl = null;
+            _activePreviewImageFile = null;
             _activePreviewIsVideo = false;
             if (hideOverlay)
             {
@@ -3332,7 +3510,44 @@ namespace WeiFlowLite
                 return;
             }
 
-            await Launcher.LaunchUriAsync(uri);
+            if (_activePreviewIsVideo)
+            {
+                await Launcher.LaunchUriAsync(uri);
+                return;
+            }
+
+            try
+            {
+                var imageFile = await EnsureActivePreviewImageFileAsync();
+                if (imageFile == null)
+                {
+                    await ShowErrorAsync("图片下载失败，无法保存。");
+                    return;
+                }
+
+                var extension = GetImageFileExtension(uri);
+                var picker = new FileSavePicker
+                {
+                    SuggestedStartLocation = PickerLocationId.PicturesLibrary,
+                    SuggestedFileName = GetImageFileName(uri, extension)
+                };
+                picker.FileTypeChoices.Add(GetImageFileTypeName(extension), new List<string> { extension });
+
+                var targetFile = await picker.PickSaveFileAsync();
+                if (targetFile == null)
+                {
+                    return;
+                }
+
+                CachedFileManager.DeferUpdates(targetFile);
+                await imageFile.CopyAndReplaceAsync(targetFile);
+                await CachedFileManager.CompleteUpdatesAsync(targetFile);
+                await ShowErrorAsync("图片已保存。");
+            }
+            catch (Exception ex)
+            {
+                await ShowErrorAsync($"图片保存失败: {ex.Message}");
+            }
         }
 
         private void MediaPreviewShareButton_Click(object sender, RoutedEventArgs e)
@@ -3356,8 +3571,134 @@ namespace WeiFlowLite
             }
 
             args.Request.Data.Properties.Title = _activePreviewIsVideo ? "分享视频" : "分享图片";
-            args.Request.Data.SetWebLink(uri);
-            args.Request.Data.SetText(url);
+            if (_activePreviewIsVideo)
+            {
+                args.Request.Data.SetWebLink(uri);
+                args.Request.Data.SetText(url);
+                return;
+            }
+
+            var deferral = args.Request.GetDeferral();
+            _ = ShareActivePreviewImageAsync(args.Request, deferral);
+        }
+
+        private async Task ShareActivePreviewImageAsync(DataRequest request, DataRequestDeferral deferral)
+        {
+            try
+            {
+                var imageFile = await EnsureActivePreviewImageFileAsync();
+                if (imageFile == null)
+                {
+                    request.FailWithDisplayText("图片下载失败，无法分享。");
+                    return;
+                }
+
+                request.Data.SetBitmap(RandomAccessStreamReference.CreateFromFile(imageFile));
+                request.Data.SetStorageItems(new[] { imageFile });
+            }
+            catch (Exception ex)
+            {
+                request.FailWithDisplayText($"图片分享失败: {ex.Message}");
+            }
+            finally
+            {
+                deferral.Complete();
+            }
+        }
+
+        private async Task<StorageFile> EnsureActivePreviewImageFileAsync()
+        {
+            if (_activePreviewImageFile != null)
+            {
+                return _activePreviewImageFile;
+            }
+
+            Uri uri;
+            if (_activePreviewIsVideo ||
+                string.IsNullOrWhiteSpace(_activePreviewLaunchUrl) ||
+                !Uri.TryCreate(_activePreviewLaunchUrl, UriKind.Absolute, out uri))
+            {
+                return null;
+            }
+
+            var extension = GetImageFileExtension(uri);
+            var fileName = GetImageFileName(uri, extension);
+            var tempFile = await ApplicationData.Current.TemporaryFolder.CreateFileAsync(
+                fileName,
+                CreationCollisionOption.GenerateUniqueName);
+
+            using (var client = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(20) })
+            {
+                client.DefaultRequestHeaders.TryAddWithoutValidation(
+                    "User-Agent",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36");
+                client.DefaultRequestHeaders.Referrer = new Uri("https://m.weibo.cn/");
+                var bytes = await client.GetByteArrayAsync(uri);
+                await FileIO.WriteBytesAsync(tempFile, bytes);
+            }
+
+            _activePreviewImageFile = tempFile;
+            return _activePreviewImageFile;
+        }
+
+        private static string GetImageFileExtension(Uri uri)
+        {
+            var path = uri?.AbsolutePath ?? string.Empty;
+            var dotIndex = path.LastIndexOf('.');
+            if (dotIndex >= 0 && dotIndex < path.Length - 1)
+            {
+                var extension = path.Substring(dotIndex).ToLowerInvariant();
+                if (extension == ".jpg" || extension == ".jpeg" || extension == ".png" || extension == ".gif" || extension == ".webp")
+                {
+                    return extension;
+                }
+            }
+
+            return ".jpg";
+        }
+
+        private static string GetImageFileName(Uri uri, string extension)
+        {
+            var path = uri?.AbsolutePath ?? string.Empty;
+            var slashIndex = path.LastIndexOf('/');
+            var rawName = slashIndex >= 0 ? path.Substring(slashIndex + 1) : path;
+            if (string.IsNullOrWhiteSpace(rawName))
+            {
+                rawName = "weibo-image";
+            }
+
+            var dotIndex = rawName.LastIndexOf('.');
+            if (dotIndex > 0)
+            {
+                rawName = rawName.Substring(0, dotIndex);
+            }
+
+            var invalidChars = new[] { '\\', '/', ':', '*', '?', '"', '<', '>', '|' };
+            foreach (var invalidChar in invalidChars)
+            {
+                rawName = rawName.Replace(invalidChar, '_');
+            }
+
+            return string.IsNullOrWhiteSpace(rawName)
+                ? "weibo-image" + extension
+                : rawName + extension;
+        }
+
+        private static string GetImageFileTypeName(string extension)
+        {
+            switch (extension)
+            {
+                case ".png":
+                    return "PNG 图片";
+                case ".gif":
+                    return "GIF 图片";
+                case ".webp":
+                    return "WebP 图片";
+                case ".jpeg":
+                case ".jpg":
+                default:
+                    return "JPEG 图片";
+            }
         }
 
         private async Task ShowErrorAsync(string message)
@@ -3433,14 +3774,8 @@ namespace WeiFlowLite
         public string FollowIconGlyph => IsFollowing ? "\uE73E" : "\uE710";
         public bool IsLiked { get; private set; }
         public string LikeIconGlyph => IsLiked ? "\uE8E1" : "\uE8E3";
-        public Brush LikeForeground => IsLiked
-            ? new SolidColorBrush(Color.FromArgb(255, 0, 120, 215))
-            : new SolidColorBrush(Colors.Gray);
         public bool IsFavorited { get; private set; }
         public string FavoriteIconGlyph => IsFavorited ? "\uE735" : "\uE734";
-        public Brush FavoriteForeground => IsFavorited
-            ? new SolidColorBrush(Color.FromArgb(255, 0, 120, 215))
-            : new SolidColorBrush(Colors.Gray);
 
         private int _attitudesCount;
         public int AttitudesCount
@@ -3533,7 +3868,6 @@ namespace WeiFlowLite
             AttitudesCount += isLiked ? 1 : -1;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsLiked)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LikeIconGlyph)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LikeForeground)));
         }
 
         public void ApplyFavorited(bool isFavorited)
@@ -3546,7 +3880,6 @@ namespace WeiFlowLite
             IsFavorited = isFavorited;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsFavorited)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(FavoriteIconGlyph)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(FavoriteForeground)));
         }
 
         public event PropertyChangedEventHandler PropertyChanged;
@@ -3929,6 +4262,25 @@ namespace WeiFlowLite
             }
 
             return Visibility.Collapsed;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, string language)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    public class BoolToVisibilityConverter : Windows.UI.Xaml.Data.IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, string language)
+        {
+            bool boolValue = value is bool b && b;
+            if (parameter is string s && bool.TryParse(s, out var invert) && invert)
+            {
+                boolValue = !boolValue;
+            }
+
+            return boolValue ? Visibility.Visible : Visibility.Collapsed;
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, string language)

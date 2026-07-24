@@ -638,8 +638,9 @@ namespace WeiFlowLite.Services
             return await SendWithRetryAsync(() =>
             {
                 var request = new HttpRequestMessage(HttpMethod.Post, url);
-                request.Headers.Referrer = new Uri(HomeUrl);
-                request.Headers.TryAddWithoutValidation("Origin", "https://m.weibo.cn");
+                var webOrigin = url.StartsWith("https://weibo.com/", StringComparison.OrdinalIgnoreCase);
+                request.Headers.Referrer = new Uri(webOrigin ? "https://weibo.com/" : HomeUrl);
+                request.Headers.TryAddWithoutValidation("Origin", webOrigin ? "https://weibo.com" : "https://m.weibo.cn");
                 request.Headers.TryAddWithoutValidation("X-Requested-With", "XMLHttpRequest");
                 request.Content = new StringContent(form, Encoding.UTF8, "application/x-www-form-urlencoded");
                 return request;

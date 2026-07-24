@@ -16,10 +16,12 @@ namespace WeiFlowLite
     sealed partial class App : Application
     {
         private bool _windowActivated;
+        private bool _themeInitialized;
 
         public App()
         {
-            ThemeHelper.Initialize();
+            // Keep the constructor limited to XAML/runtime registration.
+            // Applying RequestedTheme here can fail on ARM/mobile before a window exists.
             this.InitializeComponent();
             this.Suspending += OnSuspending;
             this.UnhandledException += App_UnhandledException;
@@ -27,6 +29,19 @@ namespace WeiFlowLite
 
         protected override void OnLaunched(LaunchActivatedEventArgs e)
         {
+            if (!_themeInitialized)
+            {
+                try
+                {
+                    ThemeHelper.Initialize();
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine("Theme initialization skipped: " + ex);
+                }
+                _themeInitialized = true;
+            }
+
             Frame rootFrame = Window.Current.Content as Frame;
 
             if (rootFrame == null)
@@ -107,6 +122,36 @@ namespace WeiFlowLite
             else
             {
                 Window.Current.Content = host;
+            }
+        }
+
+        private static void ShowFatalError(Exception ex)
+        {
+            try
+            {
+                var message = new TextBlock
+                {
+                    Text = "WeiFlowLite 启动失败\n\n" + (ex?.Message ?? "未知错误"),
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = new SolidColorBrush(Colors.White),
+                    FontSize = 14
+                };
+                var scrollViewer = new ScrollViewer
+                {
+                    Padding = new Thickness(20, 48, 20, 20),
+                    Content = message
+                };
+                var host = new Grid
+                {
+                    Background = new SolidColorBrush(Colors.Black)
+                };
+                host.Children.Add(scrollViewer);
+                Window.Current.Content = host;
+                Window.Current.Activate();
+            }
+            catch
+            {
+                // 彻底失败，无法显示任何内容
             }
         }
 

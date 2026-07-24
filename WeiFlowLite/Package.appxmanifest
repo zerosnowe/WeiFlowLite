@@ -9,7 +9,7 @@
   <Identity
     Name="a29ea66c-f089-4dd8-a317-d490bb090d82"
     Publisher="CN=ZeroSnow"
-    Version="1.0.0.0" />
+    Version="1.0.3.0" />
 
   <mp:PhoneIdentity PhoneProductId="a29ea66c-f089-4dd8-a317-d490bb090d82" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
 

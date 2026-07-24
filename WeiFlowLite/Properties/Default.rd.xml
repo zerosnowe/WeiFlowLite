@@ -1,31 +1,30 @@
 <!--
-    此文件包含 .NET Native 使用的运行时指令。此处的默认值适合大多数
-    开发人员。但可通过修改这些参数来修改 .NET Native
-    优化程序的行为。
-
-    运行时指令记录在 https://go.microsoft.com/fwlink/?LinkID=391919
-
-    完全启用对 App1.MyClass 及其所有公共/私有成员的反射
-    <Type Name="App1.MyClass" Dynamic="Required All"/>
-
-    通过 System.Int32 启用 AppClass<T> 的特定实例化动态创建
-    <TypeInstantiation Name="App1.AppClass" Arguments="System.Int32" Activate="Required Public" />
-
-    使用 Namespace 指令将反射策略应用于特定命名空间中的所有类型
-    <Namespace Name="DataClasses.ViewModels" Serialize="All" />
+    运行时指令 - .NET Native 编译优化行为配置
+    对齐 Windows-Universal-Store 的兼容性策略：确保 ARM 设备上 .NET Native 不因反射裁剪而闪退
 -->
-
 <Directives xmlns="http://schemas.microsoft.com/netfx/2013/01/metadata">
   <Application>
-    <!--
-      Name="*Application*" 的程序集元素将应用到应用程序包中的
- 所有程序集。星号不是通配符。
--->
+    <!-- 应用程序自身程序集：保留所有元数据 -->
     <Assembly Name="*Application*" Dynamic="Required All" />
-    
-    
-    <!-- 在此处添加应用程序特定的运行时指令。-->
 
+    <!-- Newtonsoft.Json：重度依赖反射，必须保留全部元数据 -->
+    <Assembly Name="Newtonsoft.Json" Dynamic="Required All" />
 
+    <!-- 数据模型命名空间：JSON 序列化/反序列化需要 -->
+    <Namespace Name="WeiFlowLite.Models" Serialize="All" Dynamic="Required All" />
+
+    <!-- 服务层：API 调用、认证存储等 -->
+    <Namespace Name="WeiFlowLite.Services" Dynamic="Required All" />
+
+    <!-- 常用集合类型：Newtonsoft.Json 序列化 List<T> 等需要 -->
+    <Type Name="System.Collections.Generic.List" Dynamic="Required All" />
+    <Type Name="System.Collections.ObjectModel.ObservableCollection" Dynamic="Required All" />
+    <Type Name="System.Collections.Generic.Dictionary" Dynamic="Required All" />
+
+    <!-- System.Linq 反射 -->
+    <Namespace Name="System.Linq" Dynamic="Required All" />
+
+    <!-- HttpClient / WebRequest 反射 -->
+    <Namespace Name="System.Net.Http" Dynamic="Required All" />
   </Application>
 </Directives>

@@ -49,15 +49,15 @@ namespace WeiFlowLite.Services
                 .ToList();
 
             var updater = TileUpdateManager.CreateTileUpdaterForApplication();
-            updater.EnableNotificationQueue(true);
             updater.Clear();
+            updater.EnableNotificationQueue(true);
 
             foreach (var item in tileItems)
             {
                 var xml = CreateTileXml(item);
                 updater.Update(new TileNotification(xml)
                 {
-                    ExpirationTime = DateTimeOffset.Now.AddHours(2)
+                    ExpirationTime = DateTimeOffset.Now.AddHours(6)
                 });
             }
         }

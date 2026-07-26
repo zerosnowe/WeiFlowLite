@@ -108,6 +108,77 @@ namespace WeiFlowLite
     document.documentElement.style.backgroundColor = '';
     document.body && (document.body.style.backgroundColor = '');
 })();";
+        private const string MessageWebViewInterceptScript = @"
+(function () {
+    if (window.__weiflowMessageDetailHooked) {
+        return;
+    }
+    window.__weiflowMessageDetailHooked = true;
+
+    function isWeiboDetailUrl(url) {
+        if (!url) {
+            return false;
+        }
+        try {
+            var parser = document.createElement('a');
+            parser.href = url;
+            var host = (parser.hostname || '').toLowerCase();
+            var path = parser.pathname || '';
+            if (host.indexOf('weibo.cn') < 0 && host.indexOf('weibo.com') < 0) {
+                return false;
+            }
+            var isDetailPath = /\/(detail|status)(\/|$)/i.test(path) || /\/statuses\/show/i.test(path);
+            if (/\/(detail|status)\/[^\/?#]+/i.test(path)) {
+                return true;
+            }
+            if (/^\/u?\/?\d+\/[A-Za-z0-9]+/i.test(path)) {
+                return true;
+            }
+            return isDetailPath && /[?&](id|mid|mblogid)=[A-Za-z0-9]+/i.test(parser.search || '');
+        } catch (ex) {
+            return false;
+        }
+    }
+
+    function openInWeiFlow(url) {
+        if (!isWeiboDetailUrl(url)) {
+            return false;
+        }
+
+        try {
+            if (window.external && typeof window.external.notify === 'function') {
+                window.external.notify('weiflow-mblog:' + url);
+                return true;
+            }
+        } catch (ex) {
+        }
+
+        window.location.href = url;
+        return true;
+    }
+
+    document.addEventListener('click', function (event) {
+        var node = event.target;
+        while (node && node !== document) {
+            if (node.tagName && node.tagName.toLowerCase() === 'a' && node.href) {
+                if (openInWeiFlow(node.href)) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                }
+                return;
+            }
+            node = node.parentNode;
+        }
+    }, true);
+
+    var rawOpen = window.open;
+    window.open = function (url, name, specs) {
+        if (openInWeiFlow(url)) {
+            return null;
+        }
+        return rawOpen ? rawOpen.call(window, url, name, specs) : null;
+    };
+})();";
 
         private static readonly string[] ExpectedChannelNames =
         {
@@ -128,12 +199,14 @@ namespace WeiFlowLite
         private readonly WeiboAuthStorage _authStorage;
         private readonly WeiboImageLoader _imageLoader;
         private readonly LiveTileService _liveTileService;
+        private readonly LocalFavoritesService _localFavoritesService;
         private readonly ObservableCollection<WeiboItemViewModel> _weiboItems;
         private readonly ObservableCollection<WeiboItemViewModel> _searchResults;
         private readonly ObservableCollection<WeiboCommentViewModel> _detailComments;
         private readonly ObservableCollection<WeiboHotSearchViewModel> _hotSearchItems;
         private readonly ObservableCollection<WeiboItemViewModel> _userTimelineItems;
         private readonly ObservableCollection<WeiboMessageCenterItemViewModel> _messageCenterItems;
+        private readonly ObservableCollection<WeiboItemViewModel> _favoritesItems;
         private readonly Queue<WeiboMblog> _pendingMblogs;
         private readonly Stack<string> _backStack;
         private readonly HashSet<string> _loadedMblogIds;
@@ -188,6 +261,14 @@ namespace WeiFlowLite
         private bool _hasMoreUserTimeline;
         private bool _isLoadingUserTimeline;
         private bool _isUpdatingFollowCategory;
+        private double _categorySwipeStartX;
+        private bool _isCategorySwiping;
+        private readonly ObservableCollection<WeiboCommentReplyViewModel> _commentRepliesCollection;
+        private WeiboCommentViewModel _commentRepliesSourceComment;
+        private string _nextCommentRepliesMaxId;
+        private bool _isLoadingMoreReplies;
+        private bool _isOpeningMessageMblog;
+        private string _commentRepliesReturnView;
 
         private bool _isNavigatingProgrammatically;
 
@@ -198,12 +279,15 @@ namespace WeiFlowLite
             _authStorage = new WeiboAuthStorage();
             _imageLoader = new WeiboImageLoader();
             _liveTileService = new LiveTileService();
+            _localFavoritesService = new LocalFavoritesService();
             _weiboItems = new ObservableCollection<WeiboItemViewModel>();
             _searchResults = new ObservableCollection<WeiboItemViewModel>();
             _detailComments = new ObservableCollection<WeiboCommentViewModel>();
             _hotSearchItems = new ObservableCollection<WeiboHotSearchViewModel>();
             _userTimelineItems = new ObservableCollection<WeiboItemViewModel>();
             _messageCenterItems = new ObservableCollection<WeiboMessageCenterItemViewModel>();
+            _favoritesItems = new ObservableCollection<WeiboItemViewModel>();
+            _commentRepliesCollection = new ObservableCollection<WeiboCommentReplyViewModel>();
             _pendingMblogs = new Queue<WeiboMblog>();
             _backStack = new Stack<string>();
             _loadedMblogIds = new HashSet<string>();
@@ -215,6 +299,8 @@ namespace WeiFlowLite
             HotSearchList.ItemsSource = _hotSearchItems;
             UserTimelineList.ItemsSource = _userTimelineItems;
             MessageCenterList.ItemsSource = _messageCenterItems;
+            FavoritesListView.ItemsSource = _favoritesItems;
+            CommentRepliesList.ItemsSource = _commentRepliesCollection;
             SizeChanged += MainPage_SizeChanged;
             if (!IsMobile)
             {
@@ -223,6 +309,10 @@ namespace WeiFlowLite
             DetailScrollViewer.ViewChanged += DetailScrollViewer_ViewChanged;
             SearchDetailScrollViewer.ViewChanged += DetailScrollViewer_ViewChanged;
             UserProfileScrollViewer.ViewChanged += UserTimelineScrollViewer_ViewChanged;
+            if (IsMobile)
+            {
+                EnableMobileCategorySwipe();
+            }
             if (!IsMobile)
             {
                 ConfigureTitleBar();
@@ -370,6 +460,12 @@ namespace WeiFlowLite
                 return true;
             }
 
+            if (CommentRepliesPanel.Visibility == Visibility.Visible)
+            {
+                CloseCommentRepliesPanel();
+                return true;
+            }
+
             if (_backStack.Count == 0)
             {
                 return false;
@@ -418,20 +514,22 @@ namespace WeiFlowLite
             var showSearch = string.Equals(tag, "search", StringComparison.OrdinalIgnoreCase);
             var showSearchDetail = string.Equals(tag, "searchDetail", StringComparison.OrdinalIgnoreCase);
             var showMessages = string.Equals(tag, "messages", StringComparison.OrdinalIgnoreCase);
+            var showFavorites = string.Equals(tag, "favorites", StringComparison.OrdinalIgnoreCase);
             var showDetail = string.Equals(tag, "detail", StringComparison.OrdinalIgnoreCase);
             var showSettings = string.Equals(tag, "settings", StringComparison.OrdinalIgnoreCase);
             var showMedia = string.Equals(tag, "media", StringComparison.OrdinalIgnoreCase);
             var showProfile = string.Equals(tag, "profile", StringComparison.OrdinalIgnoreCase);
-            var isSecondary = showSearch || showSearchDetail || showDetail || showMessages || showSettings || showMedia || showProfile;
+            var isSecondary = showSearch || showSearchDetail || showDetail || showMessages || showFavorites || showSettings || showMedia || showProfile;
             if (!showMedia && MediaPreviewOverlay.Visibility == Visibility.Visible)
             {
                 CloseMediaPreview(true);
             }
 
-            HomePanel.Visibility = (showLogin || showSearch || showSearchDetail || showMessages || showSettings || showMedia) ? Visibility.Collapsed : Visibility.Visible;
+            HomePanel.Visibility = (showLogin || showSearch || showSearchDetail || showMessages || showFavorites || showSettings || showMedia) ? Visibility.Collapsed : Visibility.Visible;
             LoginPanel.Visibility = showLogin ? Visibility.Visible : Visibility.Collapsed;
             SearchPanel.Visibility = (showSearch || showSearchDetail) ? Visibility.Visible : Visibility.Collapsed;
             MessagePanel.Visibility = showMessages ? Visibility.Visible : Visibility.Collapsed;
+            FavoritesPanel.Visibility = showFavorites ? Visibility.Visible : Visibility.Collapsed;
             SettingsPanel.Visibility = showSettings ? Visibility.Visible : Visibility.Collapsed;
             MediaPreviewOverlay.Visibility = showMedia ? Visibility.Visible : Visibility.Collapsed;
 
@@ -477,6 +575,10 @@ namespace WeiFlowLite
             {
                 _ = LoadMessageCenterAsync();
             }
+            else if (showFavorites)
+            {
+                _ = LoadFavoritesAsync();
+            }
             else if (showSettings)
             {
                 if (SettingsFrame.Content == null)
@@ -520,6 +622,7 @@ namespace WeiFlowLite
             SetPageEntranceTransition(HomePanel, offset);
             SetPageEntranceTransition(SearchPanel, offset);
             SetPageEntranceTransition(MessagePanel, offset);
+            SetPageEntranceTransition(FavoritesPanel, offset);
             SetPageEntranceTransition(LoginPanel, offset);
             SetPageEntranceTransition(SettingsPanel, offset);
             SetPageEntranceTransition(DetailPanel, offset);
@@ -625,6 +728,11 @@ namespace WeiFlowLite
             if (string.Equals(tag, "messages", StringComparison.OrdinalIgnoreCase))
             {
                 return MessagePanel;
+            }
+
+            if (string.Equals(tag, "favorites", StringComparison.OrdinalIgnoreCase))
+            {
+                return FavoritesPanel;
             }
 
             if (string.Equals(tag, "login", StringComparison.OrdinalIgnoreCase))
@@ -852,6 +960,11 @@ namespace WeiFlowLite
                 NavFooterListView.SelectedItem = null;
                 NavListView.SelectedItem = NavMessageItem;
             }
+            else if (string.Equals(tag, "favorites", StringComparison.OrdinalIgnoreCase))
+            {
+                NavFooterListView.SelectedItem = null;
+                NavListView.SelectedItem = NavFavoritesItem;
+            }
             else if (string.Equals(tag, "login", StringComparison.OrdinalIgnoreCase))
             {
                 NavListView.SelectedItem = null;
@@ -976,7 +1089,9 @@ namespace WeiFlowLite
             if (_messageWebView == null)
             {
                 _messageWebView = new WebView();
+                _messageWebView.NavigationStarting += MessageWebView_NavigationStarting;
                 _messageWebView.NavigationCompleted += MessageWebView_NavigationCompleted;
+                _messageWebView.ScriptNotify += MessageWebView_ScriptNotify;
                 MessageWebViewHost.Children.Add(_messageWebView);
             }
 
@@ -995,6 +1110,26 @@ namespace WeiFlowLite
         private async void MessageWebView_NavigationCompleted(WebView sender, WebViewNavigationCompletedEventArgs args)
         {
             await ApplyMessageWebViewThemeAsync(sender);
+            await ApplyMessageWebViewHookAsync(sender);
+        }
+
+        private void MessageWebView_NavigationStarting(WebView sender, WebViewNavigationStartingEventArgs args)
+        {
+            string mblogId;
+            if (TryGetMblogIdFromWeiboDetailUri(args.Uri, out mblogId))
+            {
+                args.Cancel = true;
+                _ = OpenMblogFromMessageWebAsync(mblogId);
+            }
+        }
+
+        private void MessageWebView_ScriptNotify(object sender, NotifyEventArgs e)
+        {
+            string mblogId;
+            if (TryGetMblogIdFromMessageHookValue(e.Value, out mblogId))
+            {
+                _ = OpenMblogFromMessageWebAsync(mblogId);
+            }
         }
 
         private async Task ApplyMessageWebViewThemeAsync(WebView webView = null)
@@ -1016,6 +1151,203 @@ namespace WeiFlowLite
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"私信网页主题注入失败: {ex.Message}");
+            }
+        }
+
+        private async Task ApplyMessageWebViewHookAsync(WebView webView = null)
+        {
+            webView = webView ?? _messageWebView;
+            if (webView == null)
+            {
+                return;
+            }
+
+            try
+            {
+                await webView.InvokeScriptAsync("eval", new[] { MessageWebViewInterceptScript });
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"私信网页跳转拦截注入失败: {ex.Message}");
+            }
+        }
+
+        private static bool TryGetMblogIdFromMessageHookValue(string value, out string mblogId)
+        {
+            mblogId = null;
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            const string prefix = "weiflow-mblog:";
+            var url = value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                ? value.Substring(prefix.Length)
+                : value;
+
+            Uri uri;
+            return Uri.TryCreate(url, UriKind.Absolute, out uri) &&
+                   TryGetMblogIdFromWeiboDetailUri(uri, out mblogId);
+        }
+
+        private static bool TryGetMblogIdFromWeiboDetailUri(Uri uri, out string mblogId)
+        {
+            mblogId = null;
+            if (uri == null)
+            {
+                return false;
+            }
+
+            var host = uri.Host ?? string.Empty;
+            if (host.IndexOf("weibo.cn", StringComparison.OrdinalIgnoreCase) < 0 &&
+                host.IndexOf("weibo.com", StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                return false;
+            }
+
+            var segments = uri.AbsolutePath
+                .Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(Uri.UnescapeDataString)
+                .ToList();
+
+            if (IsWeiboDetailPath(segments))
+            {
+                var idFromQuery = GetQueryValue(uri.Query, "id") ??
+                                  GetQueryValue(uri.Query, "mid") ??
+                                  GetQueryValue(uri.Query, "mblogid");
+                if (IsLikelyMblogId(idFromQuery))
+                {
+                    mblogId = idFromQuery;
+                    return true;
+                }
+            }
+
+            for (var i = 0; i < segments.Count - 1; i++)
+            {
+                if (string.Equals(segments[i], "detail", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(segments[i], "status", StringComparison.OrdinalIgnoreCase))
+                {
+                    var candidate = TrimUrlToken(segments[i + 1]);
+                    if (IsLikelyMblogId(candidate))
+                    {
+                        mblogId = candidate;
+                        return true;
+                    }
+                }
+            }
+
+            if (segments.Count >= 2 && segments[0].All(char.IsDigit))
+            {
+                var candidate = TrimUrlToken(segments[1]);
+                if (IsLikelyMblogId(candidate))
+                {
+                    mblogId = candidate;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool IsWeiboDetailPath(IReadOnlyList<string> segments)
+        {
+            if (segments == null || segments.Count == 0)
+            {
+                return false;
+            }
+
+            return segments.Any(segment =>
+                       string.Equals(segment, "detail", StringComparison.OrdinalIgnoreCase) ||
+                       string.Equals(segment, "status", StringComparison.OrdinalIgnoreCase)) ||
+                   HasAdjacentPathSegments(segments, "statuses", "show");
+        }
+
+        private static bool HasAdjacentPathSegments(IReadOnlyList<string> segments, string first, string second)
+        {
+            if (segments == null || segments.Count < 2)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < segments.Count - 1; i++)
+            {
+                if (string.Equals(segments[i], first, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(segments[i + 1], second, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static string GetQueryValue(string query, string key)
+        {
+            if (string.IsNullOrWhiteSpace(query) || string.IsNullOrWhiteSpace(key))
+            {
+                return null;
+            }
+
+            var normalized = query[0] == '?' ? query.Substring(1) : query;
+            foreach (var part in normalized.Split('&'))
+            {
+                var pair = part.Split(new[] { '=' }, 2);
+                if (pair.Length != 2 ||
+                    !string.Equals(Uri.UnescapeDataString(pair[0]), key, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                return TrimUrlToken(Uri.UnescapeDataString(pair[1]));
+            }
+
+            return null;
+        }
+
+        private static string TrimUrlToken(string value)
+        {
+            return string.IsNullOrWhiteSpace(value)
+                ? null
+                : value.Trim().Trim('/', '?', '#', '&');
+        }
+
+        private static bool IsLikelyMblogId(string value)
+        {
+            return !string.IsNullOrWhiteSpace(value) &&
+                   value.Length >= 5 &&
+                   value.All(ch => char.IsLetterOrDigit(ch) || ch == '_' || ch == '-');
+        }
+
+        private async Task OpenMblogFromMessageWebAsync(string mblogId)
+        {
+            if (_isOpeningMessageMblog || !IsLikelyMblogId(mblogId))
+            {
+                return;
+            }
+
+            _isOpeningMessageMblog = true;
+            try
+            {
+                if (IsMobile || IsNarrowOrPortrait())
+                {
+                    _detailParentView = _currentView;
+                    NavigateTo("detail", true);
+                }
+                else
+                {
+                    if (!string.Equals(_currentView, "home", StringComparison.OrdinalIgnoreCase))
+                    {
+                        NavigateTo("home", true);
+                    }
+                    SelectNavigationItem("home");
+                    OpenDetailPage();
+                }
+
+                await OpenDetailByIdAsync(mblogId);
+            }
+            finally
+            {
+                _isOpeningMessageMblog = false;
             }
         }
 
@@ -1082,15 +1414,7 @@ namespace WeiFlowLite
                 }
 
                 RefreshMessageWebViewIfOpened();
-                _ = RefreshHomeForAuthenticatedUserAsync();
-                SelectNavigationItem("home");
-                _currentView = "home";
-                _backStack.Clear();
-                ShowPanel("home");
-                if (_currentAuthenticatedUserUid > 0)
-                {
-                    await OpenUserProfileAsync(_currentAuthenticatedUserUid, true);
-                }
+                // 登录成功后静默保存 Cookie，停留在登录页，不打断用户操作
             }
             catch (Exception ex)
             {
@@ -1575,6 +1899,54 @@ namespace WeiFlowLite
             }
 
             await LoadNextBatchAsync(true);
+        }
+
+        private void EnableMobileCategorySwipe()
+        {
+            WeiboListView.ManipulationMode = ManipulationModes.TranslateX |
+                                              ManipulationModes.TranslateY |
+                                              ManipulationModes.TranslateInertia;
+            WeiboListView.ManipulationStarted += WeiboListView_ManipulationStarted;
+            WeiboListView.ManipulationDelta += WeiboListView_ManipulationDelta;
+            WeiboListView.ManipulationCompleted += WeiboListView_ManipulationCompleted;
+        }
+
+        private void WeiboListView_ManipulationStarted(object sender, ManipulationStartedRoutedEventArgs e)
+        {
+            _categorySwipeStartX = e.Position.X;
+            _isCategorySwiping = false;
+        }
+
+        private void WeiboListView_ManipulationDelta(object sender, ManipulationDeltaRoutedEventArgs e)
+        {
+            if (_isCategorySwiping || CategoryPivot.Items.Count < 2)
+            {
+                return;
+            }
+
+            var deltaX = e.Cumulative.Translation.X;
+            var absX = Math.Abs(deltaX);
+            var absY = Math.Abs(e.Cumulative.Translation.Y);
+
+            // 水平滑动超过阈值且方向明显偏水平时才触发切换
+            if (absX > 60 && absX > absY * 1.5)
+            {
+                _isCategorySwiping = true;
+
+                if (deltaX < 0 && CategoryPivot.SelectedIndex < CategoryPivot.Items.Count - 1)
+                {
+                    CategoryPivot.SelectedIndex++;
+                }
+                else if (deltaX > 0 && CategoryPivot.SelectedIndex > 0)
+                {
+                    CategoryPivot.SelectedIndex--;
+                }
+            }
+        }
+
+        private void WeiboListView_ManipulationCompleted(object sender, ManipulationCompletedRoutedEventArgs e)
+        {
+            _isCategorySwiping = false;
         }
 
         private async Task RefreshSameCityLocationAsync()
@@ -2111,6 +2483,36 @@ namespace WeiFlowLite
             HamburgerButton.IsChecked = false;
         }
 
+        private void PaneGrid_ManipulationDelta(object sender, ManipulationDeltaRoutedEventArgs e)
+        {
+            if (!IsMobile)
+            {
+                return;
+            }
+
+            // Only track leftward swipe (negative X translation)
+            if (e.Cumulative.Translation.X < -40)
+            {
+                RootSplitView.IsPaneOpen = false;
+                HamburgerButton.IsChecked = false;
+            }
+        }
+
+        private void PaneGrid_ManipulationCompleted(object sender, ManipulationCompletedRoutedEventArgs e)
+        {
+            if (!IsMobile)
+            {
+                return;
+            }
+
+            // If the user swiped left significantly, close the pane
+            if (e.Cumulative.Translation.X < -60)
+            {
+                RootSplitView.IsPaneOpen = false;
+                HamburgerButton.IsChecked = false;
+            }
+        }
+
         private void AttachScrollViewer()
         {
             if (_timelineScrollViewer != null)
@@ -2186,7 +2588,9 @@ namespace WeiFlowLite
             }
             if (_messageWebView != null)
             {
+                _messageWebView.NavigationStarting -= MessageWebView_NavigationStarting;
                 _messageWebView.NavigationCompleted -= MessageWebView_NavigationCompleted;
+                _messageWebView.ScriptNotify -= MessageWebView_ScriptNotify;
             }
             DataTransferManager.GetForCurrentView().DataRequested -= OnShareDataRequested;
             if (!IsMobile && _coreTitleBar != null)
@@ -2450,12 +2854,22 @@ namespace WeiFlowLite
 
         private async Task OpenDetailAsync(WeiboItemViewModel item)
         {
+            if (item == null || string.IsNullOrWhiteSpace(item.Id))
+            {
+                return;
+            }
+
+            await OpenDetailByIdAsync(item.Id);
+        }
+
+        private async Task OpenDetailByIdAsync(string id)
+        {
             var requestVersion = ++_detailRequestVersion;
             SetDetailLoadingState(true);
 
             try
             {
-                var detailMblog = await _apiService.GetMblogDetailAsync(item.Id);
+                var detailMblog = await _apiService.GetMblogDetailAsync(id);
                 if (requestVersion != _detailRequestVersion)
                 {
                     return;
@@ -2482,7 +2896,7 @@ namespace WeiFlowLite
 
                 _detailItem?.ReleaseImages();
                 _detailItem = detailItem;
-                await LoadDetailCommentsAsync(item.Id, requestVersion);
+                await LoadDetailCommentsAsync(id, requestVersion);
             }
             catch (Exception ex)
             {
@@ -2805,6 +3219,12 @@ namespace WeiFlowLite
             {
                 await _apiService.SetFollowAsync(item.User.Id, nextState);
                 item.ApplyFollowing(nextState);
+                if (_detailItem != null &&
+                    !ReferenceEquals(item, _detailItem) &&
+                    _detailItem.User?.Id == item.User.Id)
+                {
+                    _detailItem.ApplyFollowing(nextState);
+                }
             }
             catch (Exception ex)
             {
@@ -2845,7 +3265,15 @@ namespace WeiFlowLite
             var favorited = !item.IsFavorited;
             try
             {
-                await _apiService.SetFavoriteAsync(item.Id, favorited);
+                if (favorited)
+                {
+                    await _localFavoritesService.AddAsync(item.ToMblog());
+                }
+                else
+                {
+                    await _localFavoritesService.RemoveAsync(item.Id);
+                }
+
                 item.ApplyFavorited(favorited);
                 await ShowErrorAsync(favorited ? "收藏成功。" : "已取消收藏。");
             }
@@ -2880,6 +3308,13 @@ namespace WeiFlowLite
             _nextUserTimelineSinceId = 0;
             _hasMoreUserTimeline = true;
             _userTimelineItems.Clear();
+
+            if (!IsMobile && SearchPanel.Visibility == Visibility.Visible)
+            {
+                _detailParentView = "search";
+                NavigateTo("profile", true);
+            }
+
             UserProfilePanel.Visibility = Visibility.Visible;
             UserProfileLoadingIndicator.Visibility = Visibility.Visible;
             UserProfileScrollViewer.Visibility = Visibility.Collapsed;
@@ -2937,9 +3372,15 @@ namespace WeiFlowLite
 
         private void SearchDetailAvatar_Tapped(object sender, TappedRoutedEventArgs e)
         {
-            var item = SearchDetailContent.DataContext as WeiboItemViewModel;
+            var item = (sender as FrameworkElement)?.DataContext as WeiboItemViewModel;
+            if (item == null)
+            {
+                item = SearchDetailContent.DataContext as WeiboItemViewModel;
+            }
+
             if (item?.User?.Id > 0)
             {
+                e.Handled = true;
                 _ = OpenUserProfileAsync(item.User.Id);
             }
         }
@@ -2956,6 +3397,269 @@ namespace WeiFlowLite
             _ = OpenUserProfileAsync(comment.UserId);
         }
 
+        private async void CommentItem_Tapped(object sender, TappedRoutedEventArgs e)
+        {
+            var comment = (sender as FrameworkElement)?.DataContext as WeiboCommentViewModel;
+            if (comment == null || string.IsNullOrWhiteSpace(comment.Id))
+            {
+                return;
+            }
+
+            e.Handled = true;
+            await ShowReplyDialogAsync(comment);
+        }
+
+        private async void CommentMoreReplies_Click(object sender, RoutedEventArgs e)
+        {
+            var comment = (sender as FrameworkElement)?.DataContext as WeiboCommentViewModel;
+            if (comment == null || string.IsNullOrWhiteSpace(comment.Id))
+            {
+                return;
+            }
+
+            _commentRepliesSourceComment = comment;
+            _commentRepliesReturnView = GetCommentRepliesReturnView();
+            _commentRepliesCollection.Clear();
+            _nextCommentRepliesMaxId = null;
+
+            // 填充主评论信息
+            CommentRepliesAvatar.ImageSource = comment.ProfileImage;
+            CommentRepliesUserName.Text = comment.UserName;
+            CommentRepliesText.Text = comment.Text;
+            CommentRepliesMetaText.Text = comment.MetaText;
+
+            // 显示面板
+            if (IsMobile)
+            {
+                _backStack.Push(_currentView);
+                _currentView = "commentReplies";
+                HamburgerButton.Visibility = Visibility.Collapsed;
+                UpdateBackButtonState();
+            }
+
+            DetailScrollViewer.Visibility = Visibility.Collapsed;
+            DetailBottomBar.Visibility = Visibility.Collapsed;
+            DetailPlaceholder.Visibility = Visibility.Collapsed;
+            SearchDetailScrollViewer.Visibility = Visibility.Collapsed;
+            SearchDetailBottomBar.Visibility = Visibility.Collapsed;
+            SearchDetailPlaceholder.Visibility = Visibility.Collapsed;
+            UserProfilePanel.Visibility = Visibility.Collapsed;
+            HomePanel.Visibility = Visibility.Visible;
+            SearchPanel.Visibility = Visibility.Collapsed;
+            MessagePanel.Visibility = Visibility.Collapsed;
+            FavoritesPanel.Visibility = Visibility.Collapsed;
+            SettingsPanel.Visibility = Visibility.Collapsed;
+            LoginPanel.Visibility = Visibility.Collapsed;
+            MediaPreviewOverlay.Visibility = Visibility.Collapsed;
+            ApplyHomeDetailSlideLayout(true);
+            CommentRepliesPanel.Visibility = Visibility.Visible;
+            CommentRepliesScrollViewer.Visibility = Visibility.Visible;
+
+            await LoadAllRepliesAsync(comment.Id);
+        }
+
+        private string GetCommentRepliesReturnView()
+        {
+            if (SearchPanel.Visibility == Visibility.Visible &&
+                SearchDetailScrollViewer.Visibility == Visibility.Visible)
+            {
+                return "searchDetail";
+            }
+
+            return string.IsNullOrWhiteSpace(_currentView) ? "detail" : _currentView;
+        }
+
+        private void CommentRepliesBackButton_Click(object sender, RoutedEventArgs e)
+        {
+            CloseCommentRepliesPanel();
+        }
+
+        private void CloseCommentRepliesPanel()
+        {
+            CommentRepliesPanel.Visibility = Visibility.Collapsed;
+            CommentRepliesScrollViewer.Visibility = Visibility.Collapsed;
+            var returnView = string.IsNullOrWhiteSpace(_commentRepliesReturnView) ? _currentView : _commentRepliesReturnView;
+            _commentRepliesReturnView = null;
+            _commentRepliesSourceComment = null;
+
+            if (IsMobile)
+            {
+                if (_backStack.Count > 0)
+                {
+                    _currentView = _backStack.Pop();
+                }
+                HamburgerButton.Visibility = Visibility.Visible;
+                RestoreDetailAfterCommentReplies(returnView);
+                UpdateBackButtonState();
+            }
+            else
+            {
+                if (_detailItem != null)
+                {
+                    RestoreDetailAfterCommentReplies(returnView);
+                }
+            }
+        }
+
+        private void RestoreDetailAfterCommentReplies(string returnView)
+        {
+            if (string.Equals(returnView, "searchDetail", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(returnView, "search", StringComparison.OrdinalIgnoreCase))
+            {
+                HomePanel.Visibility = Visibility.Collapsed;
+                SearchPanel.Visibility = Visibility.Visible;
+                SearchDetailScrollViewer.Visibility = Visibility.Visible;
+                SearchDetailBottomBar.Visibility = Visibility.Visible;
+                SearchDetailPlaceholder.Visibility = Visibility.Collapsed;
+                ApplySearchDetailSlideLayout(true);
+                return;
+            }
+
+            HomePanel.Visibility = Visibility.Visible;
+            SearchPanel.Visibility = Visibility.Collapsed;
+            DetailScrollViewer.Visibility = Visibility.Visible;
+            DetailBottomBar.Visibility = Visibility.Visible;
+            DetailPlaceholder.Visibility = Visibility.Collapsed;
+            ApplyHomeDetailSlideLayout(true);
+        }
+
+        private async Task LoadAllRepliesAsync(string commentId)
+        {
+            if (string.IsNullOrWhiteSpace(commentId))
+            {
+                return;
+            }
+
+            try
+            {
+                _isLoadingMoreReplies = true;
+                var page = await _apiService.GetCommentRepliesAsync(commentId);
+                _nextCommentRepliesMaxId = page.NextMaxId;
+
+                foreach (var reply in page.Comments)
+                {
+                    _commentRepliesCollection.Add(new WeiboCommentReplyViewModel(reply));
+                }
+
+                // 加载更多回复（分页）
+                while (!string.IsNullOrWhiteSpace(_nextCommentRepliesMaxId) && _nextCommentRepliesMaxId != "0")
+                {
+                    var morePage = await _apiService.GetCommentRepliesAsync(commentId, _nextCommentRepliesMaxId);
+                    _nextCommentRepliesMaxId = morePage.NextMaxId;
+                    foreach (var reply in morePage.Comments)
+                    {
+                        _commentRepliesCollection.Add(new WeiboCommentReplyViewModel(reply));
+                    }
+                }
+            }
+            catch
+            {
+                // 静默处理加载失败
+            }
+            finally
+            {
+                _isLoadingMoreReplies = false;
+            }
+        }
+
+        private async void CommentRepliesReplyButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_commentRepliesSourceComment == null || string.IsNullOrWhiteSpace(_commentRepliesSourceComment.Id))
+            {
+                return;
+            }
+
+            await ShowReplyDialogAsync(_commentRepliesSourceComment);
+        }
+
+        private async Task ShowReplyDialogAsync(WeiboCommentViewModel comment)
+        {
+            if (comment == null || string.IsNullOrWhiteSpace(comment.Id))
+            {
+                return;
+            }
+
+            var targetId = comment.Id;
+            var requestVersion = _detailRequestVersion;
+            var input = new TextBox
+            {
+                PlaceholderText = string.IsNullOrWhiteSpace(comment.UserName) ? "回复评论" : $"回复 @{comment.UserName}",
+                AcceptsReturn = true,
+                TextWrapping = TextWrapping.Wrap,
+                MinHeight = 120
+            };
+
+            var emojiButton = new Button
+            {
+                Width = 44,
+                Height = 36,
+                Content = new FontIcon { Glyph = "\uE899" }
+            };
+            var sendButton = new Button
+            {
+                Content = "发送",
+                MinWidth = 84
+            };
+
+            var bottomBar = new Grid { Margin = new Thickness(0, 12, 0, 0) };
+            bottomBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            bottomBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            bottomBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            Grid.SetColumn(emojiButton, 0);
+            Grid.SetColumn(sendButton, 2);
+            bottomBar.Children.Add(emojiButton);
+            bottomBar.Children.Add(sendButton);
+
+            var panel = new StackPanel();
+            panel.Children.Add(input);
+            panel.Children.Add(bottomBar);
+
+            var dialog = new ContentDialog
+            {
+                Title = string.IsNullOrWhiteSpace(comment.UserName) ? "回复评论" : $"回复 @{comment.UserName}",
+                Content = panel,
+                CloseButtonText = "取消"
+            };
+
+            var emojiGroups = await LoadEmojiGroupsAsync();
+            var emojiFlyout = CreateEmojiFlyout(emojiGroups, input);
+            emojiButton.Flyout = emojiFlyout;
+
+            sendButton.Click += async (buttonSender, args) =>
+            {
+                var text = input.Text?.Trim();
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    return;
+                }
+
+                sendButton.IsEnabled = false;
+                try
+                {
+                    await _apiService.PostCommentReplyAsync(targetId, text);
+                    if (_commentRepliesSourceComment != null &&
+                        string.Equals(_commentRepliesSourceComment.Id, targetId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        _commentRepliesCollection.Clear();
+                        await LoadAllRepliesAsync(targetId);
+                    }
+                    else if (!string.IsNullOrWhiteSpace(_currentDetailId) &&
+                             requestVersion == _detailRequestVersion)
+                    {
+                        await LoadDetailCommentsAsync(_currentDetailId, requestVersion);
+                    }
+                    dialog.Hide();
+                }
+                catch (Exception ex)
+                {
+                    dialog.Title = $"回复发送失败: {ex.Message}";
+                    sendButton.IsEnabled = true;
+                }
+            };
+
+            await dialog.ShowAsync();
+        }
+
         private void UserProfileBackButton_Click(object sender, RoutedEventArgs e)
         {
             if (IsMobile)
@@ -2966,6 +3670,26 @@ namespace WeiFlowLite
 
             UserProfilePanel.Visibility = Visibility.Collapsed;
             EnsurePanelTransform(UserProfilePanel).TranslateX = 0;
+            if (string.Equals(_detailParentView, "search", StringComparison.OrdinalIgnoreCase))
+            {
+                HomePanel.Visibility = Visibility.Collapsed;
+                SearchPanel.Visibility = Visibility.Visible;
+                SearchDetailScrollViewer.Visibility = Visibility.Visible;
+                SearchDetailBottomBar.Visibility = Visibility.Visible;
+                SearchDetailPlaceholder.Visibility = Visibility.Collapsed;
+                ApplySearchDetailSlideLayout(true);
+                _currentView = "search";
+                if (_backStack.Count > 0 &&
+                    string.Equals(_backStack.Peek(), "search", StringComparison.OrdinalIgnoreCase))
+                {
+                    _backStack.Pop();
+                }
+                SelectNavigationItem("search");
+                UpdateBackButtonState();
+                _detailParentView = "home";
+                return;
+            }
+
             if (_detailItem != null)
             {
                 DetailScrollViewer.Visibility = Visibility.Visible;
@@ -3149,6 +3873,54 @@ namespace WeiFlowLite
             NavigateBack();
         }
 
+        private async Task LoadFavoritesAsync()
+        {
+            try
+            {
+                var mblogs = await _localFavoritesService.GetAllAsync();
+                _favoritesItems.Clear();
+                if (mblogs.Count == 0)
+                {
+                    FavoritesEmptyHint.Visibility = Visibility.Visible;
+                    FavoritesListView.Visibility = Visibility.Collapsed;
+                    return;
+                }
+
+                FavoritesEmptyHint.Visibility = Visibility.Collapsed;
+                FavoritesListView.Visibility = Visibility.Visible;
+
+                foreach (var mblog in mblogs)
+                {
+                    var vm = new WeiboItemViewModel(mblog);
+                    vm.ApplyFavorited(true);
+                    await vm.LoadImagesAsync(_imageLoader);
+                    _favoritesItems.Add(vm);
+                }
+            }
+            catch (Exception ex)
+            {
+                await ShowErrorAsync($"加载收藏失败: {ex.Message}");
+            }
+        }
+
+        private async void FavoritesListView_ItemClick(object sender, ItemClickEventArgs e)
+        {
+            var item = e.ClickedItem as WeiboItemViewModel;
+            if (item == null || string.IsNullOrWhiteSpace(item.Id))
+            {
+                return;
+            }
+
+            _detailParentView = "favorites";
+            NavigateTo("detail", true);
+            await OpenDetailAsync(item);
+        }
+
+        private void FavoritesBackButton_Click(object sender, RoutedEventArgs e)
+        {
+            NavigateBack();
+        }
+
         private void SearchBackButton_Click(object sender, RoutedEventArgs e)
         {
             NavigateBack();
@@ -3287,10 +4059,10 @@ namespace WeiFlowLite
 
             var root = new Grid
             {
-                Width = 360,
-                Height = 300
+                Width = 380,
+                Height = 340
             };
-            root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(92) });
+            root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(88) });
             root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
             var categoryList = new ListView
@@ -3299,6 +4071,12 @@ namespace WeiFlowLite
                 SelectionMode = ListViewSelectionMode.Single,
                 IsItemClickEnabled = true
             };
+            categoryList.ItemTemplate = (DataTemplate)XamlReader.Load(
+                "<DataTemplate xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\">" +
+                "<Border Padding=\"8,12\" BorderBrush=\"Transparent\" BorderThickness=\"0\">" +
+                "<TextBlock Text=\"{Binding Name}\" FontSize=\"13\" TextTrimming=\"CharacterEllipsis\" MaxLines=\"1\" VerticalAlignment=\"Center\"/>" +
+                "</Border>" +
+                "</DataTemplate>");
 
             var emojiGrid = new GridView
             {
@@ -3312,9 +4090,12 @@ namespace WeiFlowLite
             emojiGrid.ItemContainerStyle.Setters.Add(new Setter(FrameworkElement.HeightProperty, 58d));
             emojiGrid.ItemTemplate = (DataTemplate)XamlReader.Load(
                 "<DataTemplate xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\">" +
-                "<StackPanel Width=\"72\" Height=\"54\" HorizontalAlignment=\"Center\" VerticalAlignment=\"Center\">" +
-                "<Image Source=\"{Binding Image}\" Width=\"28\" Height=\"28\" Stretch=\"Uniform\" HorizontalAlignment=\"Center\" Visibility=\"{Binding ImageVisibility}\"/>" +
-                "<TextBlock Text=\"{Binding Phrase}\" FontSize=\"11\" TextAlignment=\"Center\" TextTrimming=\"CharacterEllipsis\" MaxLines=\"1\" Margin=\"0,3,0,0\"/>" +
+                "<StackPanel Width=\"72\" Height=\"62\" HorizontalAlignment=\"Center\" VerticalAlignment=\"Center\">" +
+                "<Grid Width=\"32\" Height=\"32\" HorizontalAlignment=\"Center\">" +
+                "<Image Source=\"{Binding Image}\" Width=\"32\" Height=\"32\" Stretch=\"Uniform\" Visibility=\"{Binding ImageVisibility}\"/>" +
+                "<TextBlock Text=\"{Binding EmojiChar}\" FontSize=\"24\" HorizontalAlignment=\"Center\" VerticalAlignment=\"Center\" Visibility=\"{Binding EmojiCharVisibility}\"/>" +
+                "</Grid>" +
+                "<TextBlock Text=\"{Binding Phrase}\" FontSize=\"10\" TextAlignment=\"Center\" TextTrimming=\"CharacterEllipsis\" MaxLines=\"1\" Margin=\"0,4,0,0\" Foreground=\"{ThemeResource SystemControlForegroundBaseMediumBrush}\"/>" +
                 "</StackPanel>" +
                 "</DataTemplate>");
 
@@ -3776,6 +4557,7 @@ namespace WeiFlowLite
         public string LikeIconGlyph => IsLiked ? "\uE8E1" : "\uE8E3";
         public bool IsFavorited { get; private set; }
         public string FavoriteIconGlyph => IsFavorited ? "\uE735" : "\uE734";
+        private readonly WeiboMblog _sourceMblog;
 
         private int _attitudesCount;
         public int AttitudesCount
@@ -3802,6 +4584,7 @@ namespace WeiFlowLite
             IsLiked = mblog.AttitudesStatus == 1;
             IsFavorited = mblog.Favorited;
             IsFollowing = mblog.User?.Following == true;
+            _sourceMblog = mblog;
 
             var videoUrl = GetVideoUrl(mblog.PageInfo?.MediaInfo);
             var picsList = mblog.Pics ?? new List<WeiboPic>();
@@ -3880,6 +4663,11 @@ namespace WeiFlowLite
             IsFavorited = isFavorited;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsFavorited)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(FavoriteIconGlyph)));
+        }
+
+        public WeiboMblog ToMblog()
+        {
+            return _sourceMblog;
         }
 
         public event PropertyChangedEventHandler PropertyChanged;
@@ -4000,20 +4788,32 @@ namespace WeiFlowLite
     {
         private readonly string _profileImageUrl;
 
+        public string Id { get; }
         public string UserName { get; }
         public long UserId { get; }
         public string Text { get; }
         public string MetaText { get; }
+        public int SubCommentCount { get; }
+        public ObservableCollection<WeiboCommentReplyViewModel> SubComments { get; }
+        public bool HasMoreReplies => SubCommentCount > 0 && (SubComments?.Count ?? 0) < SubCommentCount;
+        public Visibility RepliesVisibility => (SubComments?.Count ?? 0) > 0 ? Visibility.Visible : Visibility.Collapsed;
+        public Visibility MoreRepliesVisibility => HasMoreReplies ? Visibility.Visible : Visibility.Collapsed;
 
         public ImageSource ProfileImage { get; private set; }
 
         public WeiboCommentViewModel(WeiboComment comment)
         {
+            Id = comment.Id;
             UserName = comment.User?.ScreenName ?? string.Empty;
             UserId = comment.User?.Id ?? 0;
             Text = HtmlHelper.StripHtml(comment.Text);
             MetaText = $"{FormatTime(comment.CreatedAt)}    赞 {comment.LikeCounts}";
             _profileImageUrl = comment.User?.ProfileImageUrl;
+            SubCommentCount = comment.SubCommentCount;
+
+            var subComments = comment.SubComments ?? new List<WeiboComment>();
+            SubComments = new ObservableCollection<WeiboCommentReplyViewModel>(
+                subComments.Take(3).Select(sc => new WeiboCommentReplyViewModel(sc)));
         }
 
         public async Task LoadImagesAsync(WeiboImageLoader imageLoader)
@@ -4054,6 +4854,18 @@ namespace WeiFlowLite
         public event PropertyChangedEventHandler PropertyChanged;
     }
 
+    public class WeiboCommentReplyViewModel
+    {
+        public string UserName { get; }
+        public string Text { get; }
+
+        public WeiboCommentReplyViewModel(WeiboComment comment)
+        {
+            UserName = comment.User?.ScreenName ?? string.Empty;
+            Text = HtmlHelper.StripHtml(comment.Text);
+        }
+    }
+
     public class WeiboEmojiGroupViewModel
     {
         public string Name { get; }
@@ -4078,6 +4890,7 @@ namespace WeiFlowLite
     {
         public string Phrase { get; }
         public string Url { get; }
+        public string EmojiChar { get; }
 
         private ImageSource _image;
         public ImageSource Image
@@ -4088,15 +4901,18 @@ namespace WeiFlowLite
                 _image = value;
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Image)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ImageVisibility)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(EmojiCharVisibility)));
             }
         }
 
         public Visibility ImageVisibility => Image == null ? Visibility.Collapsed : Visibility.Visible;
+        public Visibility EmojiCharVisibility => Image != null ? Visibility.Collapsed : (string.IsNullOrWhiteSpace(EmojiChar) ? Visibility.Collapsed : Visibility.Visible);
 
         public WeiboEmojiItemViewModel(WeiboEmojiItem item)
         {
             Phrase = item.Phrase;
             Url = item.Url;
+            EmojiChar = item.EmojiChar;
         }
 
         public async Task LoadAsync(WeiboImageLoader imageLoader)

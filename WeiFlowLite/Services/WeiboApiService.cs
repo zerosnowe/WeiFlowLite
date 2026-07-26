@@ -417,6 +417,43 @@ namespace WeiFlowLite.Services
             return page.Comments;
         }
 
+        public async Task<WeiboCommentsPage> GetCommentRepliesAsync(string commentId, string maxId = null)
+        {
+            if (string.IsNullOrWhiteSpace(commentId))
+            {
+                throw new ArgumentException("评论 id 不能为空。", nameof(commentId));
+            }
+
+            await EnsureVisitorSessionAsync();
+
+            var url = $"https://m.weibo.cn/comments/hotFlowChild?cid={Uri.EscapeDataString(commentId)}&max_id_type=0";
+            if (!string.IsNullOrWhiteSpace(maxId) && maxId != "0")
+            {
+                url += $"&max_id={Uri.EscapeDataString(maxId)}";
+            }
+
+            using (var response = await GetTimelineResponseAsync(url))
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                if (!response.IsSuccessStatusCode)
+                {
+                    throw new HttpRequestException($"评论回复接口请求失败 ({(int)response.StatusCode} {response.ReasonPhrase})。");
+                }
+
+                var apiResponse = JsonConvert.DeserializeObject<WeiboCommentsResponse>(body);
+                if (apiResponse == null || apiResponse.Ok != 1)
+                {
+                    var message = TryGetApiMessage(body);
+                    throw new InvalidOperationException($"评论回复接口返回错误{(string.IsNullOrEmpty(message) ? string.Empty : $": {message}")}。");
+                }
+
+                var replies = apiResponse.Data?.Comments?
+                    .Where(comment => comment != null)
+                    .ToList() ?? new List<WeiboComment>();
+                return new WeiboCommentsPage(replies, apiResponse.Data?.MaxId);
+            }
+        }
+
         public async Task PostCommentAsync(string id, string content)
         {
             if (string.IsNullOrWhiteSpace(id))
@@ -451,6 +488,43 @@ namespace WeiFlowLite.Services
                 {
                     var message = apiResponse?.Value<string>("msg") ?? TryGetApiMessage(body);
                     throw new InvalidOperationException($"微博评论发布失败{(string.IsNullOrEmpty(message) ? string.Empty : $": {message}")}。");
+                }
+            }
+        }
+
+        public async Task PostCommentReplyAsync(string commentId, string content)
+        {
+            if (string.IsNullOrWhiteSpace(commentId))
+            {
+                throw new ArgumentException("评论 id 不能为空。", nameof(commentId));
+            }
+
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                throw new ArgumentException("回复内容不能为空。", nameof(content));
+            }
+
+            await EnsureVisitorSessionAsync();
+            var st = await GetStTokenAsync();
+            var form =
+                $"content={Uri.EscapeDataString(content)}" +
+                $"&cid={Uri.EscapeDataString(commentId)}" +
+                $"&st={Uri.EscapeDataString(st)}" +
+                "&_spr=screen%3A1920x1080";
+
+            using (var response = await PostTimelineFormAsync(CreateCommentUrl, form))
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                if (!response.IsSuccessStatusCode)
+                {
+                    throw new HttpRequestException($"评论回复发布失败 ({(int)response.StatusCode} {response.ReasonPhrase})。");
+                }
+
+                var apiResponse = JsonConvert.DeserializeObject<JObject>(body);
+                if (apiResponse == null || apiResponse.Value<int?>("ok") != 1)
+                {
+                    var message = apiResponse?.Value<string>("msg") ?? TryGetApiMessage(body);
+                    throw new InvalidOperationException($"评论回复发布失败{(string.IsNullOrEmpty(message) ? string.Empty : $": {message}")}。");
                 }
             }
         }
@@ -518,23 +592,40 @@ namespace WeiFlowLite.Services
         public async Task<List<WeiboEmojiGroup>> GetEmojiGroupsAsync()
         {
             await EnsureVisitorSessionAsync();
-            try
+
+            // Try multiple API endpoints to get emoji data
+            var urls = new[]
             {
-                using (var response = await GetTimelineResponseAsync(ClientConfigUrl))
+                "https://m.weibo.cn/api/config",
+                "https://m.weibo.cn/api/config/list"
+            };
+
+            foreach (var url in urls)
+            {
+                try
                 {
-                    var body = await response.Content.ReadAsStringAsync();
-                    if (response.IsSuccessStatusCode)
+                    using (var response = await GetTimelineResponseAsync(url))
                     {
-                        var groups = ParseEmojiGroups(body);
-                        if (groups.Count > 0)
+                        var body = await response.Content.ReadAsStringAsync();
+                        if (response.IsSuccessStatusCode)
                         {
-                            return groups;
+                            var groups = ParseEmojiGroups(body);
+                            if (groups.Count > 0 && groups.Any(g => g.Items.Any(i => !string.IsNullOrWhiteSpace(i.Url))))
+                            {
+                                return groups;
+                            }
+
+                            // If we got groups but no image URLs, still use them (will show Unicode fallback)
+                            if (groups.Count > 0)
+                            {
+                                return groups;
+                            }
                         }
                     }
                 }
-            }
-            catch
-            {
+                catch
+                {
+                }
             }
 
             return GetFallbackEmojiGroups();
@@ -854,28 +945,44 @@ namespace WeiFlowLite.Services
                 return new List<WeiboEmojiGroup>();
             }
 
-            var tokens = root.SelectTokens("$..emoticon")
-                .Concat(root.SelectTokens("$..emotions"))
+            // Try multiple JSON paths to find emoji arrays
+            var tokens = root.SelectTokens("$..emotions")
+                .Concat(root.SelectTokens("$..emoticon"))
                 .Concat(root.SelectTokens("$..emoji"))
+                .Concat(root.SelectTokens("$..sticker"))
+                .Concat(root.SelectTokens("$..stickers"))
                 .Where(token => token.Type == JTokenType.Array)
-                .ToList() ?? new List<JToken>();
+                .ToList();
+
             var groups = new List<WeiboEmojiGroup>();
             foreach (var token in tokens)
             {
                 var items = token.Children()
                     .Select(item => new WeiboEmojiItem
                     {
-                        Phrase = item.Value<string>("phrase") ?? item.Value<string>("value") ?? item.Value<string>("name"),
-                        Url = item.Value<string>("url") ?? item.Value<string>("icon")
+                        Phrase = item.Value<string>("phrase")
+                            ?? item.Value<string>("value")
+                            ?? item.Value<string>("name")
+                            ?? item.Value<string>("title"),
+                        Url = item.Value<string>("url")
+                            ?? item.Value<string>("icon")
+                            ?? item.Value<string>("image")
+                            ?? item.Value<string>("src")
+                            ?? item.Value<string>("thumb"),
+                        EmojiChar = item.Value<string>("emoji") ?? item.Value<string>("unicode")
                     })
                     .Where(item => !string.IsNullOrWhiteSpace(item.Phrase))
                     .GroupBy(item => item.Phrase)
                     .Select(group => group.First())
-                    .Take(48)
+                    .Take(64)
                     .ToList();
                 if (items.Count > 0)
                 {
-                    groups.Add(new WeiboEmojiGroup { Name = groups.Count == 0 ? "默认" : $"表情 {groups.Count + 1}", Items = items });
+                    groups.Add(new WeiboEmojiGroup
+                    {
+                        Name = groups.Count == 0 ? "默认" : $"表情 {groups.Count + 1}",
+                        Items = items
+                    });
                 }
             }
 
@@ -891,14 +998,30 @@ namespace WeiFlowLite.Services
                     Name = "常用",
                     Items = new List<WeiboEmojiItem>
                     {
-                        new WeiboEmojiItem { Phrase = "[微笑]" },
-                        new WeiboEmojiItem { Phrase = "[嘻嘻]" },
-                        new WeiboEmojiItem { Phrase = "[哈哈]" },
-                        new WeiboEmojiItem { Phrase = "[可爱]" },
-                        new WeiboEmojiItem { Phrase = "[爱你]" },
-                        new WeiboEmojiItem { Phrase = "[泪]" },
-                        new WeiboEmojiItem { Phrase = "[允悲]" },
-                        new WeiboEmojiItem { Phrase = "[doge]" }
+                        new WeiboEmojiItem { Phrase = "[微笑]", EmojiChar = "\U0001F60A" },
+                        new WeiboEmojiItem { Phrase = "[嘻嘻]", EmojiChar = "\U0001F601" },
+                        new WeiboEmojiItem { Phrase = "[哈哈]", EmojiChar = "\U0001F604" },
+                        new WeiboEmojiItem { Phrase = "[可爱]", EmojiChar = "\U0001F970" },
+                        new WeiboEmojiItem { Phrase = "[爱你]", EmojiChar = "\U0001F618" },
+                        new WeiboEmojiItem { Phrase = "[亲亲]", EmojiChar = "\U0001F48B" },
+                        new WeiboEmojiItem { Phrase = "[太开心]", EmojiChar = "\U0001F929" },
+                        new WeiboEmojiItem { Phrase = "[抱抱]", EmojiChar = "\U0001F917" },
+                        new WeiboEmojiItem { Phrase = "[色]", EmojiChar = "\U0001F60D" },
+                        new WeiboEmojiItem { Phrase = "[害羞]", EmojiChar = "\U0001F60A" },
+                        new WeiboEmojiItem { Phrase = "[困]", EmojiChar = "\U0001F634" },
+                        new WeiboEmojiItem { Phrase = "[睡]", EmojiChar = "\U0001F4A4" },
+                        new WeiboEmojiItem { Phrase = "[泪]", EmojiChar = "\U0001F622" },
+                        new WeiboEmojiItem { Phrase = "[偷笑]", EmojiChar = "\U0001F606" },
+                        new WeiboEmojiItem { Phrase = "[笑cry]", EmojiChar = "\U0001F602" },
+                        new WeiboEmojiItem { Phrase = "[doge]", EmojiChar = "\U0001F436" },
+                        new WeiboEmojiItem { Phrase = "[吃惊]", EmojiChar = "\U0001F631" },
+                        new WeiboEmojiItem { Phrase = "[嘘]", EmojiChar = "\U0001F92B" },
+                        new WeiboEmojiItem { Phrase = "[酷]", EmojiChar = "\U0001F60E" },
+                        new WeiboEmojiItem { Phrase = "[吐]", EmojiChar = "\U0001F92E" },
+                        new WeiboEmojiItem { Phrase = "[可怜]", EmojiChar = "\U0001F97A" },
+                        new WeiboEmojiItem { Phrase = "[挖鼻]", EmojiChar = "\U0001F443" },
+                        new WeiboEmojiItem { Phrase = "[允悲]", EmojiChar = "\U0001F605" },
+                        new WeiboEmojiItem { Phrase = "[二哈]", EmojiChar = "\U0001F436" },
                     }
                 },
                 new WeiboEmojiGroup
@@ -906,16 +1029,82 @@ namespace WeiFlowLite.Services
                     Name = "态度",
                     Items = new List<WeiboEmojiItem>
                     {
-                        new WeiboEmojiItem { Phrase = "[赞]" },
-                        new WeiboEmojiItem { Phrase = "[鼓掌]" },
-                        new WeiboEmojiItem { Phrase = "[作揖]" },
-                        new WeiboEmojiItem { Phrase = "[抱抱]" },
-                        new WeiboEmojiItem { Phrase = "[跪了]" },
-                        new WeiboEmojiItem { Phrase = "[摊手]" },
-                        new WeiboEmojiItem { Phrase = "[并不简单]" },
-                        new WeiboEmojiItem { Phrase = "[二哈]" }
+                        new WeiboEmojiItem { Phrase = "[赞]", EmojiChar = "\U0001F44D" },
+                        new WeiboEmojiItem { Phrase = "[good]", EmojiChar = "\U0001F44D" },
+                        new WeiboEmojiItem { Phrase = "[给力]", EmojiChar = "\U0001F4AA" },
+                        new WeiboEmojiItem { Phrase = "[加油]", EmojiChar = "\U0001F4AA" },
+                        new WeiboEmojiItem { Phrase = "[鼓掌]", EmojiChar = "\U0001F44F" },
+                        new WeiboEmojiItem { Phrase = "[作揖]", EmojiChar = "\U0001F64F" },
+                        new WeiboEmojiItem { Phrase = "[握手]", EmojiChar = "\U0001F91D" },
+                        new WeiboEmojiItem { Phrase = "[ok]", EmojiChar = "\U0001F44C" },
+                        new WeiboEmojiItem { Phrase = "[心]", EmojiChar = "\u2764\uFE0F" },
+                        new WeiboEmojiItem { Phrase = "[伤心]", EmojiChar = "\U0001F494" },
+                        new WeiboEmojiItem { Phrase = "[蜡烛]", EmojiChar = "\U0001F56F" },
+                        new WeiboEmojiItem { Phrase = "[蛋糕]", EmojiChar = "\U0001F382" },
+                        new WeiboEmojiItem { Phrase = "[太阳]", EmojiChar = "\u2600\uFE0F" },
+                        new WeiboEmojiItem { Phrase = "[月亮]", EmojiChar = "\U0001F319" },
+                        new WeiboEmojiItem { Phrase = "[星星]", EmojiChar = "\u2B50" },
+                        new WeiboEmojiItem { Phrase = "[下雨]", EmojiChar = "\U0001F327" },
+                        new WeiboEmojiItem { Phrase = "[微风]", EmojiChar = "\U0001F32C" },
+                        new WeiboEmojiItem { Phrase = "[音乐]", EmojiChar = "\U0001F3B5" },
+                        new WeiboEmojiItem { Phrase = "[话筒]", EmojiChar = "\U0001F3A4" },
+                        new WeiboEmojiItem { Phrase = "[钟]", EmojiChar = "\U0001F514" },
+                        new WeiboEmojiItem { Phrase = "[礼物]", EmojiChar = "\U0001F381" },
+                        new WeiboEmojiItem { Phrase = "[红包]", EmojiChar = "\U0001F9E7" },
+                        new WeiboEmojiItem { Phrase = "[钱]", EmojiChar = "\U0001F4B0" },
+                        new WeiboEmojiItem { Phrase = "[咖啡]", EmojiChar = "\u2615" },
                     }
-                }
+                },
+                new WeiboEmojiGroup
+                {
+                    Name = "动作",
+                    Items = new List<WeiboEmojiItem>
+                    {
+                        new WeiboEmojiItem { Phrase = "[跪了]", EmojiChar = "\U0001F9CE" },
+                        new WeiboEmojiItem { Phrase = "[摊手]", EmojiChar = "\U0001F937" },
+                        new WeiboEmojiItem { Phrase = "[并不简单]", EmojiChar = "\U0001F914" },
+                        new WeiboEmojiItem { Phrase = "[思考]", EmojiChar = "\U0001F914" },
+                        new WeiboEmojiItem { Phrase = "[疑问]", EmojiChar = "\U0001F928" },
+                        new WeiboEmojiItem { Phrase = "[哼]", EmojiChar = "\U0001F620" },
+                        new WeiboEmojiItem { Phrase = "[怒]", EmojiChar = "\U0001F621" },
+                        new WeiboEmojiItem { Phrase = "[怒骂]", EmojiChar = "\U0001F92C" },
+                        new WeiboEmojiItem { Phrase = "[白眼]", EmojiChar = "\U0001F644" },
+                        new WeiboEmojiItem { Phrase = "[左哼哼]", EmojiChar = "\U0001F612" },
+                        new WeiboEmojiItem { Phrase = "[右哼哼]", EmojiChar = "\U0001F612" },
+                        new WeiboEmojiItem { Phrase = "[打脸]", EmojiChar = "\U0001F926" },
+                        new WeiboEmojiItem { Phrase = "[黑线]", EmojiChar = "\U0001F611" },
+                        new WeiboEmojiItem { Phrase = "[汗]", EmojiChar = "\U0001F613" },
+                        new WeiboEmojiItem { Phrase = "[抓狂]", EmojiChar = "\U0001F92F" },
+                        new WeiboEmojiItem { Phrase = "[傻眼]", EmojiChar = "\U0001F926" },
+                        new WeiboEmojiItem { Phrase = "[阴险]", EmojiChar = "\U0001F608" },
+                        new WeiboEmojiItem { Phrase = "[委屈]", EmojiChar = "\U0001F61E" },
+                        new WeiboEmojiItem { Phrase = "[生病]", EmojiChar = "\U0001F912" },
+                        new WeiboEmojiItem { Phrase = "[晕]", EmojiChar = "\U0001F635" },
+                        new WeiboEmojiItem { Phrase = "[衰]", EmojiChar = "\U0001F629" },
+                        new WeiboEmojiItem { Phrase = "[闭嘴]", EmojiChar = "\U0001F910" },
+                        new WeiboEmojiItem { Phrase = "[鄙视]", EmojiChar = "\U0001F61F" },
+                        new WeiboEmojiItem { Phrase = "[费解]", EmojiChar = "\U0001F615" },
+                    }
+                },
+                new WeiboEmojiGroup
+                {
+                    Name = "动物",
+                    Items = new List<WeiboEmojiItem>
+                    {
+                        new WeiboEmojiItem { Phrase = "[兔子]", EmojiChar = "\U0001F430" },
+                        new WeiboEmojiItem { Phrase = "[熊猫]", EmojiChar = "\U0001F43C" },
+                        new WeiboEmojiItem { Phrase = "[猪头]", EmojiChar = "\U0001F437" },
+                        new WeiboEmojiItem { Phrase = "[草泥马]", EmojiChar = "\U0001F411" },
+                        new WeiboEmojiItem { Phrase = "[神马]", EmojiChar = "\U0001F40E" },
+                        new WeiboEmojiItem { Phrase = "[马]", EmojiChar = "\U0001F40E" },
+                        new WeiboEmojiItem { Phrase = "[喵喵]", EmojiChar = "\U0001F431" },
+                        new WeiboEmojiItem { Phrase = "[狗]", EmojiChar = "\U0001F415" },
+                        new WeiboEmojiItem { Phrase = "[鸡]", EmojiChar = "\U0001F414" },
+                        new WeiboEmojiItem { Phrase = "[猴子]", EmojiChar = "\U0001F412" },
+                        new WeiboEmojiItem { Phrase = "[蛇]", EmojiChar = "\U0001F40D" },
+                        new WeiboEmojiItem { Phrase = "[青蛙]", EmojiChar = "\U0001F438" },
+                    }
+                },
             };
         }
     }

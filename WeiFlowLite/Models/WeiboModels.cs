@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace WeiFlowLite.Models
 {
@@ -85,6 +86,13 @@ namespace WeiFlowLite.Models
 
         [JsonProperty("user")]
         public WeiboUser User { get; set; }
+
+        [JsonProperty("comments")]
+        [JsonConverter(typeof(WeiboCommentListConverter))]
+        public List<WeiboComment> SubComments { get; set; }
+
+        [JsonProperty("total_number")]
+        public int SubCommentCount { get; set; }
     }
 
     public class WeiboHotSearchResponse
@@ -94,6 +102,58 @@ namespace WeiFlowLite.Models
 
         [JsonProperty("data")]
         public WeiboHotSearchData Data { get; set; }
+    }
+
+    public sealed class WeiboCommentListConverter : JsonConverter
+    {
+        public override bool CanWrite => false;
+
+        public override bool CanConvert(System.Type objectType)
+        {
+            return objectType == typeof(List<WeiboComment>);
+        }
+
+        public override object ReadJson(JsonReader reader, System.Type objectType, object existingValue, JsonSerializer serializer)
+        {
+            if (reader.TokenType == JsonToken.Null)
+            {
+                return null;
+            }
+
+            var token = JToken.Load(reader);
+            var itemsToken = token.Type == JTokenType.Array
+                ? token
+                : token.Type == JTokenType.Object
+                    ? token["data"] ?? token["comments"]
+                    : null;
+
+            if (itemsToken == null || itemsToken.Type != JTokenType.Array)
+            {
+                return new List<WeiboComment>();
+            }
+
+            var comments = new List<WeiboComment>();
+            foreach (var item in itemsToken.Children())
+            {
+                if (item.Type != JTokenType.Object)
+                {
+                    continue;
+                }
+
+                var comment = item.ToObject<WeiboComment>(serializer);
+                if (comment != null)
+                {
+                    comments.Add(comment);
+                }
+            }
+
+            return comments;
+        }
+
+        public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
+        {
+            throw new System.NotSupportedException();
+        }
     }
 
     public class WeiboHotSearchData
@@ -140,6 +200,11 @@ namespace WeiFlowLite.Models
         public string Phrase { get; set; }
 
         public string Url { get; set; }
+
+        /// <summary>
+        /// Unicode emoji character for fallback display when image URL is unavailable.
+        /// </summary>
+        public string EmojiChar { get; set; }
 
         public override string ToString()
         {

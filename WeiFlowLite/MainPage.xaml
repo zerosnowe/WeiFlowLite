@@ -111,7 +111,9 @@
                    OpenPaneLength="320"
                    IsPaneOpen="False">
             <SplitView.Pane>
-                <Grid>
+                <Grid ManipulationMode="TranslateX,TranslateInertia"
+                      ManipulationDelta="PaneGrid_ManipulationDelta"
+                      ManipulationCompleted="PaneGrid_ManipulationCompleted">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="48"/>
                         <RowDefinition Height="*"/>
@@ -151,6 +153,16 @@
                                 </Grid.ColumnDefinitions>
                                 <FontIcon Glyph="&#xE715;" Style="{StaticResource NavIconStyle}"/>
                                 <TextBlock Grid.Column="1" Text="消息" Margin="0,0,12,0" VerticalAlignment="Center" FontSize="14"/>
+                            </Grid>
+                        </ListViewItem>
+                        <ListViewItem x:Name="NavFavoritesItem" Tag="favorites">
+                            <Grid Height="48">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="48"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <FontIcon Glyph="&#xE734;" Style="{StaticResource NavIconStyle}"/>
+                                <TextBlock Grid.Column="1" Text="收藏" Margin="0,0,12,0" VerticalAlignment="Center" FontSize="14"/>
                             </Grid>
                         </ListViewItem>
                     </ListView>
@@ -412,8 +424,7 @@
                                                 Click="DetailBackButton_Click">
                                             <FontIcon Glyph="&#xE72B;"/>
                                         </Button>
-                                        <Grid Margin="0,0,0,4"
-                                              Tapped="DetailUserHeader_Tapped">
+                                        <Grid Margin="0,0,0,4">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto"/>
                                                 <ColumnDefinition Width="*"/>
@@ -422,14 +433,16 @@
                                             <Ellipse Grid.Column="0"
                                                      Width="48"
                                                      Height="48"
-                                                     Margin="0,0,12,0">
+                                                     Margin="0,0,12,0"
+                                                     Tapped="DetailUserHeader_Tapped">
                                                 <Ellipse.Fill>
                                                     <ImageBrush ImageSource="{Binding ProfileImage}"
                                                                 Stretch="UniformToFill"/>
                                                 </Ellipse.Fill>
                                             </Ellipse>
                                             <StackPanel Grid.Column="1"
-                                                        VerticalAlignment="Center">
+                                                        VerticalAlignment="Center"
+                                                        Tapped="DetailUserHeader_Tapped">
                                                 <TextBlock Text="{Binding User.ScreenName}"
                                                            FontSize="17"
                                                            FontWeight="SemiBold"
@@ -521,42 +534,104 @@
                                                    Margin="0,16,0,0"/>
                                         <ListView x:Name="DetailCommentsList"
                                                   SelectionMode="None"
-                                                  IsItemClickEnabled="False">
+                                                  IsItemClickEnabled="False"
+                                                  ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                                                  ScrollViewer.VerticalScrollMode="Disabled">
+                                            <ListView.ItemContainerStyle>
+                                                <Style TargetType="ListViewItem">
+                                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                                </Style>
+                                            </ListView.ItemContainerStyle>
+                                            <ListView.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <StackPanel/>
+                                                </ItemsPanelTemplate>
+                                            </ListView.ItemsPanel>
                                             <ListView.ItemTemplate>
                                                 <DataTemplate>
-                                                    <Grid Padding="0,10">
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="Auto"/>
-                                                            <ColumnDefinition Width="*"/>
-                                                        </Grid.ColumnDefinitions>
-                                                        <Ellipse Grid.Column="0"
-                                                                 Width="36"
-                                                                 Height="36"
-                                                                 Margin="0,0,10,0"
-                                                                 Tapped="CommentAvatar_Tapped">
-                                                            <Ellipse.Fill>
-                                                                <ImageBrush ImageSource="{Binding ProfileImage}"
-                                                                            Stretch="UniformToFill"/>
-                                                            </Ellipse.Fill>
-                                                        </Ellipse>
-                                                        <StackPanel Grid.Column="1">
-                                                            <TextBlock Text="{Binding UserName}"
-                                                                       FontSize="13"
-                                                                       FontWeight="SemiBold"
-                                                                       Foreground="#EB7340"
-                                                                       TextWrapping="Wrap"/>
-                                                            <TextBlock Text="{Binding Text}"
-                                                                       FontSize="14"
-                                                                       LineHeight="21"
-                                                                       TextWrapping="Wrap"
-                                                                       Margin="0,2,0,0"/>
-                                                            <TextBlock Text="{Binding MetaText}"
-                                                                       FontSize="12"
-                                                                       Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
-                                                                       TextWrapping="Wrap"
-                                                                       Margin="0,4,0,0"/>
-                                                        </StackPanel>
-                                                    </Grid>
+                                                    <StackPanel HorizontalAlignment="Stretch">
+                                                        <Grid Padding="0,10"
+                                                              HorizontalAlignment="Stretch"
+                                                              Tapped="CommentItem_Tapped">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="Auto"/>
+                                                                <ColumnDefinition Width="*"/>
+                                                            </Grid.ColumnDefinitions>
+                                                            <Ellipse Grid.Column="0"
+                                                                     Width="36"
+                                                                     Height="36"
+                                                                     Margin="0,0,10,0"
+                                                                     Tapped="CommentAvatar_Tapped">
+                                                                <Ellipse.Fill>
+                                                                    <ImageBrush ImageSource="{Binding ProfileImage}"
+                                                                                Stretch="UniformToFill"/>
+                                                                </Ellipse.Fill>
+                                                            </Ellipse>
+                                                            <StackPanel Grid.Column="1">
+                                                                <TextBlock Text="{Binding UserName}"
+                                                                           FontSize="13"
+                                                                           FontWeight="SemiBold"
+                                                                           Foreground="#EB7340"
+                                                                           TextWrapping="Wrap"/>
+                                                                <TextBlock Text="{Binding Text}"
+                                                                           FontSize="14"
+                                                                           LineHeight="21"
+                                                                           TextWrapping="Wrap"
+                                                                           Margin="0,2,0,0"/>
+                                                                <TextBlock Text="{Binding MetaText}"
+                                                                           FontSize="12"
+                                                                           Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                                                                           TextWrapping="Wrap"
+                                                                           Margin="0,4,0,0"/>
+                                                            </StackPanel>
+                                                        </Grid>
+                                                        <Border Background="#0D000000"
+                                                                CornerRadius="4"
+                                                                Padding="10,8"
+                                                                Margin="46,0,0,4"
+                                                                HorizontalAlignment="Stretch"
+                                                                Visibility="{Binding RepliesVisibility}">
+                                                            <StackPanel>
+                                                                <ItemsControl ItemsSource="{Binding SubComments}">
+                                                                    <ItemsControl.ItemsPanel>
+                                                                        <ItemsPanelTemplate>
+                                                                            <StackPanel/>
+                                                                        </ItemsPanelTemplate>
+                                                                    </ItemsControl.ItemsPanel>
+                                                                    <ItemsControl.ItemTemplate>
+                                                                        <DataTemplate>
+                                                                            <Grid Margin="0,3">
+                                                                                <Grid.ColumnDefinitions>
+                                                                                    <ColumnDefinition Width="Auto"/>
+                                                                                    <ColumnDefinition Width="*"/>
+                                                                                </Grid.ColumnDefinitions>
+                                                                                <TextBlock Text="{Binding UserName}"
+                                                                                           FontSize="12"
+                                                                                           FontWeight="SemiBold"
+                                                                                           Foreground="#EB7340"
+                                                                                           Margin="0,0,8,0"
+                                                                                           VerticalAlignment="Top"/>
+                                                                                <TextBlock Grid.Column="1"
+                                                                                           Text="{Binding Text}"
+                                                                                           FontSize="12"
+                                                                                           TextWrapping="Wrap"
+                                                                                           LineHeight="18"
+                                                                                           Foreground="{ThemeResource SystemControlForegroundBaseHighBrush}"/>
+                                                                            </Grid>
+                                                                        </DataTemplate>
+                                                                    </ItemsControl.ItemTemplate>
+                                                                </ItemsControl>
+                                                                <Button Content="更多回复"
+                                                                        FontSize="12"
+                                                                        Foreground="#EB7340"
+                                                                        Background="Transparent"
+                                                                        Padding="0,6,0,0"
+                                                                        HorizontalAlignment="Left"
+                                                                        Visibility="{Binding MoreRepliesVisibility}"
+                                                                        Click="CommentMoreReplies_Click"/>
+                                                            </StackPanel>
+                                                        </Border>
+                                                    </StackPanel>
                                                 </DataTemplate>
                                             </ListView.ItemTemplate>
                                         </ListView>
@@ -745,6 +820,126 @@
                                                         </DataTemplate>
                                                     </ListView.ItemTemplate>
                                                 </ListView>
+                                            </StackPanel>
+                                        </ScrollViewer>
+                                    </Grid>
+                                </Grid>
+                                <Grid x:Name="CommentRepliesPanel"
+                                      Grid.RowSpan="2"
+                                      Visibility="Collapsed"
+                                      Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+                                      Canvas.ZIndex="6">
+                                    <Grid>
+                                        <ScrollViewer x:Name="CommentRepliesScrollViewer"
+                                                      Visibility="Collapsed"
+                                                      HorizontalScrollBarVisibility="Disabled"
+                                                      HorizontalScrollMode="Disabled"
+                                                      Padding="24,16,24,24">
+                                            <StackPanel HorizontalAlignment="Stretch">
+                                                <Button x:Name="CommentRepliesBackButton"
+                                                        Width="40"
+                                                        Height="40"
+                                                        Padding="0"
+                                                        Background="Transparent"
+                                                        Click="CommentRepliesBackButton_Click">
+                                                    <FontIcon Glyph="&#xE72B;"/>
+                                                </Button>
+                                                <!-- 主评论 -->
+                                                <Grid Padding="0,10">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <Ellipse Grid.Column="0"
+                                                             Width="36"
+                                                             Height="36"
+                                                             Margin="0,0,10,0">
+                                                        <Ellipse.Fill>
+                                                            <ImageBrush x:Name="CommentRepliesAvatar"
+                                                                        Stretch="UniformToFill"/>
+                                                        </Ellipse.Fill>
+                                                    </Ellipse>
+                                                    <StackPanel Grid.Column="1">
+                                                        <TextBlock x:Name="CommentRepliesUserName"
+                                                                   FontSize="13"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="#EB7340"
+                                                                   TextWrapping="Wrap"/>
+                                                        <TextBlock x:Name="CommentRepliesText"
+                                                                   FontSize="14"
+                                                                   LineHeight="21"
+                                                                   TextWrapping="Wrap"
+                                                                   Margin="0,2,0,0"/>
+                                                        <TextBlock x:Name="CommentRepliesMetaText"
+                                                                   FontSize="12"
+                                                                   Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                                                                   TextWrapping="Wrap"
+                                                                   Margin="0,4,0,0"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                                <Button Content="回复"
+                                                        FontSize="12"
+                                                        Foreground="#EB7340"
+                                                        Background="Transparent"
+                                                        Padding="0,4,0,0"
+                                                        HorizontalAlignment="Left"
+                                                        Click="CommentRepliesReplyButton_Click"/>
+                                                <TextBlock Text="全部回复"
+                                                           FontSize="18"
+                                                           FontWeight="SemiBold"
+                                                           Margin="0,16,0,0"/>
+                                                <ListView x:Name="CommentRepliesList"
+                                                          SelectionMode="None"
+                                                          IsItemClickEnabled="False"
+                                                          ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                                                          ScrollViewer.VerticalScrollMode="Disabled">
+                                                    <ListView.ItemContainerStyle>
+                                                        <Style TargetType="ListViewItem">
+                                                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                                        </Style>
+                                                    </ListView.ItemContainerStyle>
+                                                    <ListView.ItemsPanel>
+                                                        <ItemsPanelTemplate>
+                                                            <StackPanel/>
+                                                        </ItemsPanelTemplate>
+                                                    </ListView.ItemsPanel>
+                                                    <ListView.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Grid Padding="0,8"
+                                                                  HorizontalAlignment="Stretch">
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                    <ColumnDefinition Width="*"/>
+                                                                </Grid.ColumnDefinitions>
+                                                                <TextBlock Text="{Binding UserName}"
+                                                                           FontSize="12"
+                                                                           FontWeight="SemiBold"
+                                                                           Foreground="#EB7340"
+                                                                           Margin="0,0,8,0"
+                                                                           VerticalAlignment="Top"/>
+                                                                <TextBlock Grid.Column="1"
+                                                                           Text="{Binding Text}"
+                                                                           FontSize="13"
+                                                                           TextWrapping="Wrap"
+                                                                           LineHeight="20"
+                                                                           Foreground="{ThemeResource SystemControlForegroundBaseHighBrush}"/>
+                                                            </Grid>
+                                                        </DataTemplate>
+                                                    </ListView.ItemTemplate>
+                                                </ListView>
+                                                <StackPanel x:Name="CommentRepliesLoadingIndicator"
+                                                            Orientation="Horizontal"
+                                                            HorizontalAlignment="Center"
+                                                            Margin="0,12"
+                                                            Visibility="Collapsed">
+                                                    <ProgressBar x:Name="CommentRepliesLoadingBar"
+                                                                  Width="28"
+                                                                  Height="4"
+                                                                  IsIndeterminate="True"/>
+                                                    <TextBlock Text="正在加载更多回复"
+                                                               Margin="8,4,0,0"
+                                                               Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"/>
+                                                </StackPanel>
                                             </StackPanel>
                                         </ScrollViewer>
                                     </Grid>
@@ -960,14 +1155,15 @@
                                                      Width="48"
                                                      Height="48"
                                                      Margin="0,0,12,0"
-                                                     Tapped="SearchDetailAvatar_Tapped">
+                                                     Tapped="DetailUserHeader_Tapped">
                                                 <Ellipse.Fill>
                                                     <ImageBrush ImageSource="{Binding ProfileImage}"
                                                                 Stretch="UniformToFill"/>
                                                 </Ellipse.Fill>
                                             </Ellipse>
                                             <StackPanel Grid.Column="1"
-                                                        VerticalAlignment="Center">
+                                                        VerticalAlignment="Center"
+                                                        Tapped="DetailUserHeader_Tapped">
                                                 <TextBlock Text="{Binding User.ScreenName}"
                                                            FontSize="17"
                                                            FontWeight="SemiBold"
@@ -1059,42 +1255,104 @@
                                                    Margin="0,16,0,0"/>
                                         <ListView x:Name="SearchDetailCommentsList"
                                                   SelectionMode="None"
-                                                  IsItemClickEnabled="False">
+                                                  IsItemClickEnabled="False"
+                                                  ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                                                  ScrollViewer.VerticalScrollMode="Disabled">
+                                            <ListView.ItemContainerStyle>
+                                                <Style TargetType="ListViewItem">
+                                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                                </Style>
+                                            </ListView.ItemContainerStyle>
+                                            <ListView.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <StackPanel/>
+                                                </ItemsPanelTemplate>
+                                            </ListView.ItemsPanel>
                                             <ListView.ItemTemplate>
                                                 <DataTemplate>
-                                                    <Grid Padding="0,10">
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="Auto"/>
-                                                            <ColumnDefinition Width="*"/>
-                                                        </Grid.ColumnDefinitions>
-                                                        <Ellipse Grid.Column="0"
-                                                                 Width="36"
-                                                                 Height="36"
-                                                                 Margin="0,0,10,0"
-                                                                 Tapped="CommentAvatar_Tapped">
-                                                            <Ellipse.Fill>
-                                                                <ImageBrush ImageSource="{Binding ProfileImage}"
-                                                                            Stretch="UniformToFill"/>
-                                                            </Ellipse.Fill>
-                                                        </Ellipse>
-                                                        <StackPanel Grid.Column="1">
-                                                            <TextBlock Text="{Binding UserName}"
-                                                                       FontSize="13"
-                                                                       FontWeight="SemiBold"
-                                                                       Foreground="#EB7340"
-                                                                       TextWrapping="Wrap"/>
-                                                            <TextBlock Text="{Binding Text}"
-                                                                       FontSize="14"
-                                                                       LineHeight="21"
-                                                                       TextWrapping="Wrap"
-                                                                       Margin="0,2,0,0"/>
-                                                            <TextBlock Text="{Binding MetaText}"
-                                                                       FontSize="12"
-                                                                       Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
-                                                                       TextWrapping="Wrap"
-                                                                       Margin="0,4,0,0"/>
-                                                        </StackPanel>
-                                                    </Grid>
+                                                    <StackPanel HorizontalAlignment="Stretch">
+                                                        <Grid Padding="0,10"
+                                                              HorizontalAlignment="Stretch"
+                                                              Tapped="CommentItem_Tapped">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="Auto"/>
+                                                                <ColumnDefinition Width="*"/>
+                                                            </Grid.ColumnDefinitions>
+                                                            <Ellipse Grid.Column="0"
+                                                                     Width="36"
+                                                                     Height="36"
+                                                                     Margin="0,0,10,0"
+                                                                     Tapped="CommentAvatar_Tapped">
+                                                                <Ellipse.Fill>
+                                                                    <ImageBrush ImageSource="{Binding ProfileImage}"
+                                                                                Stretch="UniformToFill"/>
+                                                                </Ellipse.Fill>
+                                                            </Ellipse>
+                                                            <StackPanel Grid.Column="1">
+                                                                <TextBlock Text="{Binding UserName}"
+                                                                           FontSize="13"
+                                                                           FontWeight="SemiBold"
+                                                                           Foreground="#EB7340"
+                                                                           TextWrapping="Wrap"/>
+                                                                <TextBlock Text="{Binding Text}"
+                                                                           FontSize="14"
+                                                                           LineHeight="21"
+                                                                           TextWrapping="Wrap"
+                                                                           Margin="0,2,0,0"/>
+                                                                <TextBlock Text="{Binding MetaText}"
+                                                                           FontSize="12"
+                                                                           Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                                                                           TextWrapping="Wrap"
+                                                                           Margin="0,4,0,0"/>
+                                                            </StackPanel>
+                                                        </Grid>
+                                                        <Border Background="#0D000000"
+                                                                CornerRadius="4"
+                                                                Padding="10,8"
+                                                                Margin="46,0,0,4"
+                                                                HorizontalAlignment="Stretch"
+                                                                Visibility="{Binding RepliesVisibility}">
+                                                            <StackPanel>
+                                                                <ItemsControl ItemsSource="{Binding SubComments}">
+                                                                    <ItemsControl.ItemsPanel>
+                                                                        <ItemsPanelTemplate>
+                                                                            <StackPanel/>
+                                                                        </ItemsPanelTemplate>
+                                                                    </ItemsControl.ItemsPanel>
+                                                                    <ItemsControl.ItemTemplate>
+                                                                        <DataTemplate>
+                                                                            <Grid Margin="0,3">
+                                                                                <Grid.ColumnDefinitions>
+                                                                                    <ColumnDefinition Width="Auto"/>
+                                                                                    <ColumnDefinition Width="*"/>
+                                                                                </Grid.ColumnDefinitions>
+                                                                                <TextBlock Text="{Binding UserName}"
+                                                                                           FontSize="12"
+                                                                                           FontWeight="SemiBold"
+                                                                                           Foreground="#EB7340"
+                                                                                           Margin="0,0,8,0"
+                                                                                           VerticalAlignment="Top"/>
+                                                                                <TextBlock Grid.Column="1"
+                                                                                           Text="{Binding Text}"
+                                                                                           FontSize="12"
+                                                                                           TextWrapping="Wrap"
+                                                                                           LineHeight="18"
+                                                                                           Foreground="{ThemeResource SystemControlForegroundBaseHighBrush}"/>
+                                                                            </Grid>
+                                                                        </DataTemplate>
+                                                                    </ItemsControl.ItemTemplate>
+                                                                </ItemsControl>
+                                                                <Button Content="更多回复"
+                                                                        FontSize="12"
+                                                                        Foreground="#EB7340"
+                                                                        Background="Transparent"
+                                                                        Padding="0,6,0,0"
+                                                                        HorizontalAlignment="Left"
+                                                                        Visibility="{Binding MoreRepliesVisibility}"
+                                                                        Click="CommentMoreReplies_Click"/>
+                                                            </StackPanel>
+                                                        </Border>
+                                                    </StackPanel>
                                                 </DataTemplate>
                                             </ListView.ItemTemplate>
                                         </ListView>
@@ -1246,6 +1504,96 @@
                         </Border>
                         <Grid x:Name="MessageWebViewHost"
                               Grid.Column="1"/>
+                    </Grid>
+
+                    <Grid x:Name="FavoritesPanel"
+                          Visibility="Collapsed"
+                          Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+                        <Grid.Transitions>
+                            <TransitionCollection>
+                                <EntranceThemeTransition FromHorizontalOffset="24"/>
+                            </TransitionCollection>
+                        </Grid.Transitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="48"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <Border Grid.Row="0"
+                                Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Button x:Name="FavoritesBackButton"
+                                        Grid.Column="0"
+                                        Width="48"
+                                        Height="48"
+                                        Padding="0"
+                                        Background="Transparent"
+                                        Visibility="Collapsed"
+                                        Click="FavoritesBackButton_Click">
+                                    <FontIcon Glyph="&#xE72B;"/>
+                                </Button>
+                                <TextBlock Grid.Column="1"
+                                           Text="收藏"
+                                           Height="48"
+                                           Padding="16,0"
+                                           FontSize="18"
+                                           FontWeight="SemiBold"
+                                           VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+                        <ListView x:Name="FavoritesListView"
+                                  Grid.Row="1"
+                                  SelectionMode="None"
+                                  IsItemClickEnabled="True"
+                                  ItemClick="FavoritesListView_ItemClick">
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Padding="12,10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Ellipse Grid.Column="0"
+                                                 Width="40"
+                                                 Height="40"
+                                                 Margin="0,0,10,0">
+                                            <Ellipse.Fill>
+                                                <ImageBrush ImageSource="{Binding ProfileImage}"
+                                                            Stretch="UniformToFill"/>
+                                            </Ellipse.Fill>
+                                        </Ellipse>
+                                        <StackPanel Grid.Column="1">
+                                            <TextBlock Text="{Binding User.ScreenName}"
+                                                       FontSize="15"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="#EB7340"
+                                                       TextWrapping="Wrap"/>
+                                            <TextBlock Text="{Binding Text}"
+                                                       FontSize="14"
+                                                       LineHeight="21"
+                                                       TextWrapping="Wrap"
+                                                       MaxLines="4"
+                                                       Margin="0,4,0,0"/>
+                                            <TextBlock Text="{Binding MetaText}"
+                                                       FontSize="12"
+                                                       Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                                                       TextWrapping="Wrap"
+                                                       Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                        <TextBlock x:Name="FavoritesEmptyHint"
+                                   Grid.Row="1"
+                                   Text="暂无收藏"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                                   Visibility="Collapsed"/>
                     </Grid>
 
                     <Grid x:Name="LoginPanel"

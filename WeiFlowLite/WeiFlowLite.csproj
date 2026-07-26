@@ -139,6 +139,7 @@
     <Compile Include="Services\WeiboAuthStorage.cs" />
     <Compile Include="Services\WeiboImageLoader.cs" />
     <Compile Include="Services\LiveTileService.cs" />
+    <Compile Include="Services\LocalFavoritesService.cs" />
     <Compile Include="SettingsPage.xaml.cs">
       <DependentUpon>SettingsPage.xaml</DependentUpon>
     </Compile>
